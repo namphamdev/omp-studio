@@ -1,6 +1,6 @@
 # OMP Studio
 
-A sleek desktop cockpit for the [Oh My Pi (`omp`)](https://github.com/DylanMcCavitt/omp-studio)
+A sleek desktop cockpit for the [Oh My Pi (`omp`)](https://github.com/can1357/oh-my-pi)
 coding-agent harness — live agent chat, dashboards, and browsers for everything
 `omp` knows about, in one native window.
 

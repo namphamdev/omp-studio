@@ -210,7 +210,7 @@ export default function Settings() {
               </p>
               <button
                 onClick={() =>
-                  window.omp.openExternal("https://github.com/oh-my-pi/oh-my-pi")
+                  window.omp.openExternal("https://github.com/can1357/oh-my-pi")
                 }
                 className="inline-flex items-center gap-1 text-xs text-accent hover:underline"
               >
