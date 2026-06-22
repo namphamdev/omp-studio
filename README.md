@@ -71,6 +71,36 @@ npm run dist
 electron-builder and downloads platform Electron binaries, so it runs locally
 or in the release workflow rather than in CI.
 
+## Testing
+
+```sh
+# RPC bridge integration test (handshake only; live model turn needs RPC_LIVE=1)
+npm run test:rpc
+
+# Electron end-to-end smoke against the built app (launch / render / navigation)
+npm run build && npm run test:e2e
+```
+
+`npm run test:e2e` uses Playwright's `_electron` API to launch the bundled app
+from `out/main/index.js`, so the app must be built first. The smoke suite
+(`e2e/smoke.spec.ts`) is **non-live and hermetic**: it never starts a chat, and
+it launches the app with `omp`/`gh` pointed at a nonexistent binary and the
+agent-state dir at an empty temp dir, so the data services hit their
+graceful-degrade path and no `omp`/`gh` child is spawned. The result is
+identical whether or not `omp`/`gh` are installed. It asserts the window title,
+the sidebar navigation, the Dashboard, and that every browse view (Sessions,
+Skills, MCP, Agents, GitHub, Settings) navigates without a renderer crash.
+
+Electron needs a display server even for a smoke launch, so on headless Linux CI
+wrap the command with xvfb:
+
+```sh
+xvfb-run -a npm run test:e2e
+```
+
+Live, paid end-to-end scenarios (real chat turns, approval round-trips, resume,
+concurrency) are out of scope here and run only behind `STUDIO_E2E_LIVE=1`.
+
 ## Architecture
 
 OMP Studio follows the standard Electron three-process split. The renderer never
@@ -163,6 +193,7 @@ Contributions are welcome. Before opening a pull request:
 1. Run `npm run typecheck` and ensure it passes.
 2. Run `npm run build` to confirm the app bundles.
 3. Run `npm run test:rpc` for the RPC bridge tests.
+4. Run `npm run build && npm run test:e2e` for the Electron smoke suite.
 
 Keep changes focused, follow the existing TypeScript and component conventions,
 and update [CHANGELOG.md](CHANGELOG.md) under `## [Unreleased]`. Issue and pull
