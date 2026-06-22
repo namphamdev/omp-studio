@@ -6,11 +6,12 @@ import type {
   AgentInfo,
   McpServerInfo,
   ModelInfo,
+  ProviderAuthStatus,
   ProviderInfo,
   SkillInfo,
 } from "@shared/domain";
 import { agentDir, mcpConfigPath, ompBinary } from "../paths";
-import { runCli, runJson } from "./cli";
+import { probeCredential, runCli, runJson } from "./cli";
 
 // ---------------------------------------------------------------------------
 // Frontmatter parsing (shared by skills + agents)
@@ -98,24 +99,140 @@ export async function listModels(): Promise<ModelInfo[]> {
   return result?.models ?? [];
 }
 
-export async function listProviders(): Promise<ProviderInfo[]> {
-  const counts = new Map<string, number>();
-  for (const model of await listModels()) {
-    counts.set(model.provider, (counts.get(model.provider) ?? 0) + 1);
+/** Signature of the shared CLI runner; injectable so tests can stub spawning. */
+type CliRunner = typeof runCli;
+
+/** Signature of the count-only credential probe; injectable for tests. */
+type CredentialProbe = typeof probeCredential;
+
+/** Re-probe provider auth at most this often; spawning `omp` is not free. */
+const PROVIDER_CACHE_TTL_MS = 60_000;
+
+/** Hard ceiling on a single count-only `omp token` probe. */
+const TOKEN_PROBE_TIMEOUT_MS = 3_000;
+
+let providerCache: { at: number; providers: ProviderInfo[] } | null = null;
+
+/** A provider whose every model is free needs no credential (e.g. llama.cpp). */
+function isCostFreeProvider(model: ModelInfo): boolean {
+  const cost = model.cost;
+  if (!cost) return true;
+  return (
+    (cost.input ?? 0) === 0 &&
+    (cost.output ?? 0) === 0 &&
+    (cost.cacheRead ?? 0) === 0 &&
+    (cost.cacheWrite ?? 0) === 0
+  );
+}
+
+/**
+ * Providers that `omp usage --json --redact` reports against — these are
+ * authenticated accounts. Returns an empty set on any failure so detection
+ * degrades to per-provider probing rather than guessing.
+ */
+async function fetchUsageProviders(run: CliRunner): Promise<Set<string>> {
+  const found = new Set<string>();
+  const result = await run(ompBinary(), ["usage", "--json", "--redact"]);
+  if (result.code !== 0) return found;
+  const start = result.stdout.search(/[{[]/);
+  if (start < 0) return found;
+  let parsed: { reports?: Array<{ provider?: unknown }> };
+  try {
+    parsed = JSON.parse(result.stdout.slice(start));
+  } catch {
+    return found;
   }
+  for (const report of parsed.reports ?? []) {
+    if (typeof report.provider === "string") found.add(report.provider);
+  }
+  return found;
+}
+
+/**
+ * Count-only credential probe for a single provider. Reads ONLY whether a
+ * credential exists — a clean exit with at least one stdout byte. The probe
+ * never accumulates, inspects, stores, returns, or logs the token bytes (see
+ * {@link probeCredential}). A timeout / spawn failure (exit code < 0) is too
+ * ambiguous to call a negative, so it degrades to "unknown".
+ */
+async function probeToken(
+  probe: CredentialProbe,
+  provider: string,
+): Promise<ProviderAuthStatus> {
+  const { exitCode, hasStdout } = await probe(
+    ompBinary(),
+    ["token", provider],
+    {
+      timeoutMs: TOKEN_PROBE_TIMEOUT_MS,
+    },
+  );
+  if (exitCode < 0) return "unknown";
+  return exitCode === 0 && hasStdout ? "authenticated" : "unauthenticated";
+}
+
+/**
+ * Resolve real auth status for every provider that has models, using a single
+ * `omp usage` snapshot plus count-only token probes. Exported (with injectable
+ * `run`/`probe` deps) so the no-leak / timeout / not-required paths are
+ * unit-testable without spawning a real `omp`.
+ */
+export async function detectProviderAuth(
+  models: ModelInfo[],
+  run: CliRunner = runCli,
+  probe: CredentialProbe = probeCredential,
+): Promise<ProviderInfo[]> {
+  const groups = new Map<string, { count: number; allFree: boolean }>();
+  for (const model of models) {
+    const free = isCostFreeProvider(model);
+    const group = groups.get(model.provider);
+    if (group) {
+      group.count += 1;
+      group.allFree &&= free;
+    } else {
+      groups.set(model.provider, { count: 1, allFree: free });
+    }
+  }
+
+  const usageProviders = await fetchUsageProviders(run);
+
   const providers: ProviderInfo[] = [];
-  for (const [id, modelCount] of counts) {
-    // B2 replaces this with real usage/token detection; stopgap keeps the
-    // contract satisfied without leaking or probing tokens.
-    const authenticated = true;
+  for (const [id, { count, allFree }] of groups) {
+    let authStatus: ProviderAuthStatus;
+    let authSource: ProviderInfo["authSource"];
+    if (usageProviders.has(id)) {
+      authStatus = "authenticated";
+      authSource = "usage";
+    } else if (allFree) {
+      authStatus = "not_required";
+      authSource = "local";
+    } else {
+      authStatus = await probeToken(probe, id);
+      authSource =
+        authStatus === "authenticated"
+          ? "token"
+          : authStatus === "unknown"
+            ? "error"
+            : "none";
+    }
     providers.push({
       id,
       name: id,
-      authenticated,
-      authStatus: authenticated ? "authenticated" : "unknown",
-      modelCount,
+      authenticated: authStatus === "authenticated",
+      authStatus,
+      authSource,
+      modelCount: count,
     });
   }
+  return providers;
+}
+
+export async function listProviders(): Promise<ProviderInfo[]> {
+  const now = Date.now();
+  if (providerCache && now - providerCache.at < PROVIDER_CACHE_TTL_MS) {
+    return providerCache.providers;
+  }
+  const providers = await detectProviderAuth(await listModels(), runCli);
+  providerCache = { at: now, providers };
   return providers;
 }
 
