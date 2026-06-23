@@ -431,6 +431,57 @@ test("drops secret-shaped entries from id lists (pinnedCommands, navOrder, panel
   ]);
 });
 
+test("persists right-rail layout fields and drops invalid/secret-shaped ones (AGE-630)", async () => {
+  // Valid id + finite width round-trip.
+  await updateSettings({
+    layout: { rightPanelId: "skills", rightPanelWidthPct: 32 },
+  });
+  let loaded = await loadSettings();
+  expect(loaded.layout?.rightPanelId).toBe("skills");
+  expect(loaded.layout?.rightPanelWidthPct).toBe(32);
+
+  // A secret-shaped rightPanelId is rejected (id-guard parity); a non-finite
+  // width is rejected. Neither valid field present → no clobber of the prior.
+  const SECRET = "ghp_secretsecretsecretsecret";
+  await updateSettings({
+    layout: {
+      rightPanelId: SECRET,
+      rightPanelWidthPct: Number.POSITIVE_INFINITY,
+    },
+  } as unknown as Partial<StudioSettings>);
+  const raw = readFileSync(settingsFile(), "utf8");
+  expect(raw).not.toContain(SECRET);
+  loaded = await loadSettings();
+  expect(loaded.layout).toEqual({
+    rightPanelId: "skills",
+    rightPanelWidthPct: 32,
+  });
+});
+
+test("a {rightPanelId: null} patch clears a previously-set rightPanelId (AGE-630)", async () => {
+  // Open then resize: layout carries an id alongside other fields.
+  await updateSettings({
+    layout: { rightPanelId: "skills", rightPanelWidthPct: 30 },
+  });
+  expect((await loadSettings()).layout?.rightPanelId).toBe("skills");
+
+  // Collapse: the renderer sends the full merged layout with a null id. The
+  // closed state must persist (null cleared), keeping the other fields intact.
+  await updateSettings({
+    layout: { rightPanelId: null, rightPanelWidthPct: 30 },
+  });
+  let loaded = await loadSettings();
+  expect(loaded.layout?.rightPanelId ?? null).toBeNull();
+  expect(loaded.layout?.rightPanelWidthPct).toBe(30);
+
+  // Case B: id as the ONLY layout field still clears (would otherwise reopen).
+  await updateSettings({ layout: { rightPanelId: "mcp" } });
+  expect((await loadSettings()).layout?.rightPanelId).toBe("mcp");
+  await updateSettings({ layout: { rightPanelId: null } });
+  loaded = await loadSettings();
+  expect(loaded.layout?.rightPanelId ?? null).toBeNull();
+});
+
 test("a malformed object-shaped namespace patch preserves the prior value (no empty-clobber)", async () => {
   await updateSettings({
     layout: { sidebarWidthPct: 30 },
