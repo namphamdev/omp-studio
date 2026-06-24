@@ -1,4 +1,10 @@
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import {
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  rmSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -209,6 +215,91 @@ test("dragging the sidebar splitter to its minimum keeps content in-panel", asyn
     return Math.max(0, el.scrollWidth - el.clientWidth);
   });
   expect(sidebarOverflow).toBeLessThanOrEqual(1);
+
+  expect(rendererCrashes).toEqual([]);
+  expect(pageErrors).toEqual([]);
+});
+
+// AGE-666 — the chat transcript + composer must fill a widening chat column
+// instead of staying pinned to the old centered 768px band (max-w-3xl), capped
+// only by a generous 72rem readability ceiling. The composer/transcript wrappers
+// mount solely with a live session, which this hermetic harness (unresolvable
+// OMP_BINARY, no renderer store seam) can never reach. So the fill is proven at
+// two layers: a source guard that both wrappers use the SAME max class (and the
+// old band is gone), and a runtime probe that injects the exact wrapper classes
+// and measures what the BUILT Tailwind stylesheet resolves them to in a wide
+// panel — the old class capped at 768px; the new one must track the panel and
+// cap at 72rem.
+const SHARED_MAX = "max-w-[min(100%,72rem)]";
+const TRANSCRIPT_WRAPPER = `mx-auto flex w-full ${SHARED_MAX} flex-col gap-4`;
+const COMPOSER_WRAPPER = `mx-auto w-full ${SHARED_MAX}`;
+
+function readComponent(relativePath: string): string {
+  return readFileSync(
+    fileURLToPath(new URL(relativePath, import.meta.url)),
+    "utf8",
+  );
+}
+
+test("the chat transcript and composer fill a wide panel up to the 72rem ceiling", async () => {
+  await setContentSize(1680, HEIGHT);
+
+  // Source guard: both wrappers share the identical max (so they stay aligned),
+  // the retired 768px band (max-w-3xl) is gone, and the composer carries its
+  // stable measurement hook.
+  const composerSrc = readComponent(
+    "../src/renderer/src/components/chat/Composer.tsx",
+  );
+  const messageListSrc = readComponent(
+    "../src/renderer/src/components/chat/MessageList.tsx",
+  );
+  expect(composerSrc).toContain('data-testid="composer-width"');
+  expect(composerSrc).toContain(SHARED_MAX);
+  expect(composerSrc).not.toContain("max-w-3xl");
+  expect(messageListSrc).toContain(SHARED_MAX);
+  expect(messageListSrc).not.toContain("max-w-3xl");
+
+  // Runtime guard: measure the compiled classes inside a wide (1500px) and a
+  // narrow (900px) panel. Probes are fixed/hidden and removed in-place so they
+  // never pollute the document or sibling tests.
+  const probe = await page.evaluate(
+    ({ transcriptCls, composerCls }) => {
+      const rootPx =
+        parseFloat(getComputedStyle(document.documentElement).fontSize) || 16;
+      const measure = (parentWidth: number, className: string): number => {
+        const outer = document.createElement("div");
+        outer.style.cssText = `position:fixed;top:0;left:0;width:${parentWidth}px;visibility:hidden;pointer-events:none;`;
+        const child = document.createElement("div");
+        child.className = className;
+        outer.appendChild(child);
+        document.body.appendChild(outer);
+        const width = child.getBoundingClientRect().width;
+        outer.remove();
+        return width;
+      };
+      return {
+        rootPx,
+        wideTranscript: measure(1500, transcriptCls),
+        wideComposer: measure(1500, composerCls),
+        narrowComposer: measure(900, composerCls),
+      };
+    },
+    { transcriptCls: TRANSCRIPT_WRAPPER, composerCls: COMPOSER_WRAPPER },
+  );
+
+  const ceiling = 72 * probe.rootPx; // 72rem in px (1152 at the default 16px root)
+
+  // Substantially wider than the retired 768px band → the content now fills.
+  expect(probe.wideComposer).toBeGreaterThan(1000);
+  expect(probe.wideTranscript).toBeGreaterThan(1000);
+  // …but still capped below the 1500px panel — a readability ceiling, not 100%.
+  expect(probe.wideComposer).toBeLessThan(1500);
+  expect(Math.abs(probe.wideComposer - ceiling)).toBeLessThanOrEqual(2);
+  expect(Math.abs(probe.wideTranscript - ceiling)).toBeLessThanOrEqual(2);
+  // Transcript and composer share the identical max → they stay aligned.
+  expect(probe.wideTranscript).toBe(probe.wideComposer);
+  // Below the ceiling the wrapper tracks the panel width exactly (min → 100%).
+  expect(Math.abs(probe.narrowComposer - 900)).toBeLessThanOrEqual(1);
 
   expect(rendererCrashes).toEqual([]);
   expect(pageErrors).toEqual([]);

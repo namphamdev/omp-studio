@@ -1,6 +1,7 @@
-// Feature 4 — the subagent drill-in pane. Renders the selected subagent's
-// transcript (via the shared TranscriptView) plus a live progress/event feed,
-// degrading honestly per the matrix:
+// Feature 4 — the subagent drill-in view. A first-class, full-height center
+// pane (header bar + Back + full-width transcript) that renders the selected
+// subagent's transcript plus a live progress/event feed, degrading honestly
+// per the matrix:
 //   - no sessionFile        → progress-only (ticker + feed, "no transcript yet")
 //   - completed + file      → readSession() once; empty/failed → EmptyState
 //   - live + file           → chat.getSubagentMessages cursor, appended on each
@@ -18,7 +19,13 @@ import {
 } from "lucide-react";
 import { useEffect } from "react";
 import { TranscriptView } from "@/components/transcript/TranscriptView";
-import { Badge, EmptyState, IconButton, Panel, Spinner } from "@/components/ui";
+import {
+  Badge,
+  Button,
+  EmptyState,
+  IconButton,
+  Spinner,
+} from "@/components/ui";
 import { formatNumber } from "@/lib/format";
 import { useAsync } from "@/lib/useAsync";
 import { useAppStore } from "@/store/app";
@@ -180,13 +187,29 @@ export function SubagentInspector({
   const focusSession = useAppStore((s) => s.focusSession);
 
   return (
-    <Panel
-      title={subagentLabel(subagent)}
-      actions={
-        <>
-          <IconButton label="Back to subagents" onClick={onBack}>
-            <ArrowLeft className="h-4 w-4" />
-          </IconButton>
+    <div className="flex h-full min-h-0 min-w-0 flex-col">
+      <header className="flex items-center gap-3 border-b border-border-subtle px-4 py-2.5">
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={onBack}
+          aria-label="Back to chat"
+          className="shrink-0"
+        >
+          <ArrowLeft className="h-4 w-4" />
+          Back
+        </Button>
+        <span className="min-w-0 flex-1 truncate text-sm font-medium text-ink">
+          {subagentLabel(subagent)}
+        </span>
+        <div className="flex shrink-0 items-center gap-2">
+          <Badge variant={SOURCE_VARIANT[subagent.agentSource]}>
+            {subagent.agentSource}
+          </Badge>
+          <Badge variant={STATUS_VARIANT[status]}>{status}</Badge>
+          <span className="font-mono text-xs text-ink-faint">
+            {subagent.agent}
+          </span>
           {sessionFile && (
             <IconButton
               label="Open in Sessions"
@@ -197,39 +220,30 @@ export function SubagentInspector({
               <SquareArrowOutUpRight className="h-4 w-4" />
             </IconButton>
           )}
-        </>
-      }
-      bodyClassName="scrollbar max-h-[28rem] space-y-3 overflow-y-auto p-4"
-    >
-      <div className="flex flex-wrap items-center gap-1.5">
-        <Badge variant={SOURCE_VARIANT[subagent.agentSource]}>
-          {subagent.agentSource}
-        </Badge>
-        <Badge variant={STATUS_VARIANT[status]}>{status}</Badge>
-        <span className="font-mono text-xs text-ink-faint">
-          {subagent.agent}
-        </span>
+        </div>
+      </header>
+
+      <div className="scrollbar min-h-0 flex-1 space-y-3 overflow-y-auto p-4">
+        {progress && <ProgressDetail progress={progress} />}
+
+        {!sessionFile ? (
+          <EmptyState
+            icon={<MessageSquareDashed className="h-6 w-6" />}
+            title="Transcript not available yet"
+            hint="This subagent hasn't written a session file."
+          />
+        ) : live ? (
+          <LiveTranscript
+            sessionId={sessionId}
+            subagentId={id}
+            sessionFile={sessionFile}
+          />
+        ) : (
+          <CompletedTranscript sessionFile={sessionFile} />
+        )}
+
+        {live && <EventFeed events={events} />}
       </div>
-
-      {progress && <ProgressDetail progress={progress} />}
-
-      {!sessionFile ? (
-        <EmptyState
-          icon={<MessageSquareDashed className="h-6 w-6" />}
-          title="Transcript not available yet"
-          hint="This subagent hasn't written a session file."
-        />
-      ) : live ? (
-        <LiveTranscript
-          sessionId={sessionId}
-          subagentId={id}
-          sessionFile={sessionFile}
-        />
-      ) : (
-        <CompletedTranscript sessionFile={sessionFile} />
-      )}
-
-      {live && <EventFeed events={events} />}
-    </Panel>
+    </div>
   );
 }

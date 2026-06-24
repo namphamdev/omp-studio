@@ -95,6 +95,11 @@ interface ChatState {
   /** Cleanup for the single global bridge subscription (null until wired). */
   _unsub: (() => void) | null;
   /**
+   * The subagent whose live transcript is "popped into" the center column, or
+   * null when the main chat transcript is shown. Cleared on session switch.
+   */
+  inspectedSubagentId: string | null;
+  /**
    * Live drill-in transcript buffer for the open SubagentInspector, or null
    * when none is open. Ephemeral; never persisted.
    */
@@ -109,6 +114,8 @@ interface ChatActions {
 
   /** Select which session the chat pane shows (without changing route). */
   setActiveSession(id: string | null): void;
+  /** Pop into (id) / out of (null) a subagent's full-view transcript. */
+  setInspectedSubagent(id: string | null): void;
   /** Show an existing session in the chat route. */
   openChat(id: string): void;
   /** Start a brand-new chat in the active workspace using the default model. */
@@ -251,6 +258,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   createError: undefined,
   _unsub: null,
   _subagentInspector: null,
+  inspectedSubagentId: null,
 
   ensureSubscribed() {
     if (get()._unsub) return;
@@ -277,11 +285,15 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   },
 
   setActiveSession(id) {
-    set({ activeSessionId: id });
+    set({ activeSessionId: id, inspectedSubagentId: null });
+  },
+
+  setInspectedSubagent(id) {
+    set({ inspectedSubagentId: id });
   },
 
   openChat(id) {
-    set({ activeSessionId: id });
+    set({ activeSessionId: id, inspectedSubagentId: null });
     useAppStore.getState().setRoute("chat");
   },
 

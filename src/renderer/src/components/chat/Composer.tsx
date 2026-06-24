@@ -34,7 +34,10 @@ export function Composer() {
 
   return (
     <div className="border-t border-border-subtle bg-bg-panel px-4 py-3">
-      <div className="mx-auto max-w-3xl">
+      <div
+        data-testid="composer-width"
+        className="mx-auto w-full max-w-[min(100%,72rem)]"
+      >
         <PromptComposer
           disabled={disabled}
           injectText={pendingComposerText}

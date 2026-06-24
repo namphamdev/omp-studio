@@ -30,13 +30,7 @@ export const CHAT_RAIL_MAX_PCT = 48;
 export const CHAT_TRANSCRIPT_MIN_PCT = 40;
 
 /** The chat right-rail panels, in their default display order. */
-export const RAIL_PANEL_IDS = [
-  "model",
-  "thinking",
-  "stats",
-  "todos",
-  "subagents",
-] as const;
+export const RAIL_PANEL_IDS = ["stats", "todos", "subagents"] as const;
 export type RailPanelId = (typeof RAIL_PANEL_IDS)[number];
 
 /** A rail panel's persisted state: its id, in order, plus whether it shows. */
