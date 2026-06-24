@@ -5,11 +5,9 @@
 // session's slice from the normalized multi-session store.
 
 import type { ChatUiRequestEvent } from "@shared/ipc";
-import type { RpcModel, ThinkingLevel } from "@shared/rpc";
+import type { SubagentInfo, SubagentSnapshot } from "@shared/rpc";
 import {
-  Brain,
   Check,
-  Cpu,
   Gauge,
   GripVertical,
   ListTodo,
@@ -24,25 +22,26 @@ import { type ReactNode, useEffect, useMemo } from "react";
 import { PanelGroup, Panel as ResizablePanel } from "react-resizable-panels";
 import { Composer } from "@/components/chat/Composer";
 import { MessageList } from "@/components/chat/MessageList";
+import { ModelControl } from "@/components/chat/ModelControl";
 import { SessionStatusBadge } from "@/components/chat/SessionList";
 import {
   ContextMeterChip,
   SessionStatsPanel,
 } from "@/components/chat/SessionStatsPanel";
+import { SubagentInspector } from "@/components/chat/SubagentInspector";
 import { SubagentTree } from "@/components/chat/SubagentTree";
+import { ThinkingControl } from "@/components/chat/ThinkingControl";
 import { TodoPanel } from "@/components/chat/TodoPanel";
 import { UiRequestLayer } from "@/components/chat/UiRequestLayer";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { useDragReorder } from "@/components/layout/useDragReorder";
 import { usePersistedPanelLayout } from "@/components/layout/usePersistedPanelLayout";
 import {
-  Badge,
   Button,
   EmptyState,
   IconButton,
   Menu,
   MenuItem,
-  Panel,
 } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import {
@@ -57,21 +56,14 @@ import {
   roundPct,
   setRailPanelVisible,
 } from "@/lib/layout";
-import { useAsync } from "@/lib/useAsync";
 import { useActiveSession, useChatStore } from "@/store/chat";
 import { useSettingsStore } from "@/store/settings";
 
-const THINKING_LEVELS: ThinkingLevel[] = [
-  "off",
-  "minimal",
-  "low",
-  "medium",
-  "high",
-  "xhigh",
-];
-
 /** Stable empty queue so the no-active-session selectors keep a steady ref. */
 const NO_UI: ChatUiRequestEvent[] = [];
+
+/** Stable empty roster so the no-subagent selector keeps a steady ref. */
+const NO_SUBAGENTS: SubagentInfo[] = [];
 
 export default function ChatWorkspace() {
   const activeSessionId = useChatStore((s) => s.activeSessionId);
@@ -117,16 +109,12 @@ function NoActiveSession() {
 }
 
 const RAIL_PANEL_TITLE: Record<RailPanelId, string> = {
-  model: "Model",
-  thinking: "Thinking",
   stats: "Usage",
   todos: "Plan",
   subagents: "Subagents",
 };
 
 const RAIL_PANEL_ICON: Record<RailPanelId, LucideIcon> = {
-  model: Cpu,
-  thinking: Brain,
   stats: Gauge,
   todos: ListTodo,
   subagents: Users,
@@ -135,10 +123,8 @@ const RAIL_PANEL_ICON: Record<RailPanelId, LucideIcon> = {
 /** Everything a rail panel needs to render its live controls. */
 interface RailContext {
   sessionId: string;
-  model: RpcModel | null;
-  onModelChange: (provider: string, id: string) => void;
-  thinkingLevel: ThinkingLevel;
-  onThinkingChange: (level: ThinkingLevel) => void;
+  /** Pop into a subagent's full-view transcript (center column). */
+  onInspect: (subagentId: string) => void;
 }
 
 function ChatSession({ sessionId }: { sessionId: string }) {
@@ -157,6 +143,14 @@ function ChatSession({ sessionId }: { sessionId: string }) {
   );
   const settingsLoaded = useSettingsStore((s) => s.settings != null);
   const setLayout = useSettingsStore((s) => s.setLayout);
+  const inspectedId = useChatStore((s) => s.inspectedSubagentId);
+  const setInspected = useChatStore((s) => s.setInspectedSubagent);
+  const subagents = useActiveSession(
+    (s) => s?.subagents ?? NO_SUBAGENTS,
+  ) as unknown as SubagentSnapshot[];
+  const inspected = inspectedId
+    ? subagents.find((s) => s.id === inspectedId)
+    : undefined;
 
   // Safety net: if the active session isn't registered yet (e.g. selected from
   // another surface), open it now. start() registers before activating, so this
@@ -177,19 +171,11 @@ function ChatSession({ sessionId }: { sessionId: string }) {
     };
   }, [sessionId, open, openSession]);
 
-  const modelName = model
-    ? (model.name ?? `${model.provider}/${model.id}`)
-    : "—";
-
   const transcript = (
     <div className="flex h-full min-w-0 flex-col">
       <header className="flex items-center gap-3 border-b border-border-subtle px-4 py-2.5">
-        <span className="min-w-0 truncate font-mono text-sm text-ink">
-          {modelName}
-        </span>
-        <Badge variant="muted" className="capitalize">
-          {thinkingLevel}
-        </Badge>
+        <ModelControl model={model} onChange={setModel} />
+        <ThinkingControl level={thinkingLevel} onChange={setThinking} />
         <SessionStatusBadge
           status={status}
           uiRequests={uiRequests}
@@ -207,10 +193,23 @@ function ChatSession({ sessionId }: { sessionId: string }) {
     </div>
   );
 
+  // Pop into a subagent's live transcript in place of the main chat; the rail
+  // tree's Eye sets the id, the inspector's Back clears it.
+  const center =
+    inspected != null ? (
+      <SubagentInspector
+        subagent={inspected}
+        sessionId={sessionId}
+        onBack={() => setInspected(null)}
+      />
+    ) : (
+      transcript
+    );
+
   if (railCollapsed) {
     return (
       <div className="flex h-full min-h-0">
-        <div className="min-w-0 flex-1">{transcript}</div>
+        <div className="min-w-0 flex-1">{center}</div>
         <RailIconStrip
           onExpand={() => setLayout({ chatRailCollapsed: false })}
         />
@@ -221,10 +220,7 @@ function ChatSession({ sessionId }: { sessionId: string }) {
   const rail = (
     <RightRail
       sessionId={sessionId}
-      model={model}
-      onModelChange={setModel}
-      thinkingLevel={thinkingLevel}
-      onThinkingChange={setThinking}
+      onInspect={setInspected}
       onCollapse={() => setLayout({ chatRailCollapsed: true })}
     />
   );
@@ -232,7 +228,7 @@ function ChatSession({ sessionId }: { sessionId: string }) {
   return (
     <ChatRailSplit
       key={settingsLoaded ? "ready" : "boot"}
-      transcript={transcript}
+      transcript={center}
       rail={rail}
     />
   );
@@ -482,22 +478,6 @@ function renderRailPanel(
   handle: ReactNode,
 ): ReactNode {
   switch (id) {
-    case "model":
-      return (
-        <ModelPanel
-          model={ctx.model}
-          onChange={ctx.onModelChange}
-          headerLeading={handle}
-        />
-      );
-    case "thinking":
-      return (
-        <ThinkingPanel
-          level={ctx.thinkingLevel}
-          onChange={ctx.onThinkingChange}
-          headerLeading={handle}
-        />
-      );
     case "stats":
       return (
         <SessionStatsPanel sessionId={ctx.sessionId} headerLeading={handle} />
@@ -505,88 +485,6 @@ function renderRailPanel(
     case "todos":
       return <TodoPanel headerLeading={handle} />;
     case "subagents":
-      return <SubagentTree headerLeading={handle} />;
+      return <SubagentTree headerLeading={handle} onInspect={ctx.onInspect} />;
   }
-}
-
-function ModelPanel({
-  model,
-  onChange,
-  headerLeading,
-}: {
-  model: RpcModel | null;
-  onChange: (provider: string, id: string) => void;
-  headerLeading?: ReactNode;
-}) {
-  const { data: models } = useAsync(() => window.omp.listModels(), []);
-  const current = models?.find(
-    (m) => m.provider === model?.provider && m.id === model?.id,
-  );
-
-  return (
-    <Panel
-      title="Model"
-      collapsible
-      persistKey="chat.rail.model"
-      headerLeading={headerLeading}
-    >
-      <select
-        value={current?.selector ?? ""}
-        disabled={!models}
-        onChange={(e) => {
-          const m = models?.find((x) => x.selector === e.target.value);
-          if (m) onChange(m.provider, m.id);
-        }}
-        className="w-full rounded-md border border-border-subtle bg-bg-raised px-2 py-1.5 text-sm text-ink focus:border-accent focus:outline-none disabled:opacity-50"
-      >
-        {!current && (
-          <option value="">
-            {model ? `${model.provider}/${model.id}` : "Select a model"}
-          </option>
-        )}
-        {models?.map((m) => (
-          <option key={m.selector} value={m.selector}>
-            {m.name}
-          </option>
-        ))}
-      </select>
-    </Panel>
-  );
-}
-
-function ThinkingPanel({
-  level,
-  onChange,
-  headerLeading,
-}: {
-  level: ThinkingLevel;
-  onChange: (level: ThinkingLevel) => void;
-  headerLeading?: ReactNode;
-}) {
-  return (
-    <Panel
-      title="Thinking"
-      collapsible
-      persistKey="chat.rail.thinking"
-      headerLeading={headerLeading}
-    >
-      <div className="flex flex-wrap gap-1">
-        {THINKING_LEVELS.map((l) => (
-          <button
-            key={l}
-            type="button"
-            onClick={() => onChange(l)}
-            className={cn(
-              "rounded-md px-2 py-1 text-xs capitalize transition-colors",
-              l === level
-                ? "bg-accent text-white"
-                : "bg-bg-raised text-ink-muted hover:bg-bg-hover",
-            )}
-          >
-            {l}
-          </button>
-        ))}
-      </div>
-    </Panel>
-  );
 }

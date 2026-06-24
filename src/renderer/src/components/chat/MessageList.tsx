@@ -78,7 +78,7 @@ export function MessageList() {
           No messages yet. Send a prompt to begin.
         </div>
       ) : (
-        <div className="mx-auto flex max-w-3xl flex-col gap-4">
+        <div className="mx-auto flex w-full max-w-[min(100%,72rem)] flex-col gap-4">
           {visible.map((m, i) => (
             <Fragment key={i}>
               {/* Cards captured at this transcript position render before the

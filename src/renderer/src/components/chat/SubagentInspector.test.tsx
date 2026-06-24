@@ -9,12 +9,13 @@ import type { OmpApi } from "@shared/ipc";
 import type { AgentProgress, SubagentSnapshot } from "@shared/rpc";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { beforeEach, expect, it, vi } from "vitest";
+import { beforeEach, describe, expect, it, vi } from "vitest";
 import { useAppStore } from "@/store/app";
 import { useChatStore } from "@/store/chat";
 import { useSettingsStore } from "@/store/settings";
 import { useShellStore } from "@/store/shell";
 import { SubagentInspector } from "./SubagentInspector";
+import { subagentLabel } from "./SubagentTree";
 
 function snap(over: Partial<SubagentSnapshot> = {}): SubagentSnapshot {
   return {
@@ -157,5 +158,59 @@ it("Open in Sessions focuses the subagent's transcript file", async () => {
   expect(useAppStore.getState().sessionFocus).toEqual({
     path: "/abs/a.jsonl",
     messageIndex: -1,
+  });
+});
+
+it("shows a concise header label and a Back control in the full-height view", async () => {
+  const user = userEvent.setup();
+  const onBack = vi.fn();
+  render(
+    <SubagentInspector
+      sessionId="s1"
+      subagent={snap({
+        status: "completed",
+        sessionFile: undefined,
+        task: "Complete the assignment below, thoroughly: # Target Run the repo validation gate\n# Change wire it up",
+      })}
+      onBack={onBack}
+    />,
+  );
+  // Header shows the distilled label, never the raw boilerplate prompt.
+  expect(screen.getByText("Run the repo validation gate")).toBeInTheDocument();
+  expect(screen.queryByText(/Complete the assignment/)).not.toBeInTheDocument();
+  await user.click(screen.getByRole("button", { name: "Back to chat" }));
+  expect(onBack).toHaveBeenCalledOnce();
+});
+
+describe("subagentLabel", () => {
+  it("strips worker boilerplate and uses the # Target clause", () => {
+    expect(
+      subagentLabel(
+        snap({
+          task: "Complete the assignment below, thoroughly: # Target Run the repo validation gate\n# Change do x",
+        }),
+      ),
+    ).toBe("Run the repo validation gate");
+  });
+
+  it("prefers an explicit description over the task prompt", () => {
+    expect(
+      subagentLabel(
+        snap({
+          description: "Polish the dashboard",
+          task: "Complete the assignment below, thoroughly: # Target something else entirely",
+        }),
+      ),
+    ).toBe("Polish the dashboard");
+  });
+
+  it("truncates an overly long label with an ellipsis", () => {
+    const label = subagentLabel(snap({ description: "x".repeat(200) }));
+    expect(label.length).toBeLessThanOrEqual(81);
+    expect(label.endsWith("…")).toBe(true);
+  });
+
+  it("falls back to the agent name when there is no description or task", () => {
+    expect(subagentLabel(snap({ agent: "reviewer" }))).toBe("reviewer");
   });
 });

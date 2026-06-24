@@ -107,12 +107,10 @@ describe("resolveRailPanels", () => {
   it("respects persisted order/visibility and appends missing panels as visible", () => {
     const got = resolveRailPanels([
       { id: "subagents", visible: false },
-      { id: "model", visible: true },
+      { id: "stats", visible: true },
     ]);
     expect(got).toEqual([
       { id: "subagents", visible: false },
-      { id: "model", visible: true },
-      { id: "thinking", visible: true },
       { id: "stats", visible: true },
       { id: "todos", visible: true },
     ]);
@@ -121,11 +119,11 @@ describe("resolveRailPanels", () => {
   it("drops unknown ids and de-duplicates persisted entries", () => {
     const got = resolveRailPanels([
       { id: "ghost", visible: true },
-      { id: "model", visible: false },
-      { id: "model", visible: true },
+      { id: "stats", visible: false },
+      { id: "stats", visible: true },
     ]);
-    expect(got.filter((p) => p.id === "model")).toEqual([
-      { id: "model", visible: false },
+    expect(got.filter((p) => p.id === "stats")).toEqual([
+      { id: "stats", visible: false },
     ]);
     expect(got.map((p) => String(p.id))).not.toContain("ghost");
     expect(got).toHaveLength(RAIL_PANEL_IDS.length);

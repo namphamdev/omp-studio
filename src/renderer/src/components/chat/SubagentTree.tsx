@@ -4,7 +4,7 @@
 // under it, everything else hangs off the session root. Each node shows the
 // agent label, its source + status badges, and (when running) a live ticker
 // driven by the reduced `AgentProgress`. Disclosure uses the shared Collapsible
-// primitive (no hand-rolled <details>); the Eye action drills into the inspector.
+// primitive (no hand-rolled <details>); the Eye action calls `onInspect` to open it.
 
 import type {
   AgentProgress,
@@ -14,7 +14,7 @@ import type {
   ToolExecutionFrame,
 } from "@shared/rpc";
 import { Eye, Users } from "lucide-react";
-import { type ReactNode, useMemo, useState } from "react";
+import { type ReactNode, useMemo } from "react";
 import type { BadgeVariant } from "@/components/ui";
 import {
   Badge,
@@ -26,7 +26,6 @@ import {
 import { formatNumber } from "@/lib/format";
 import { useActiveSession } from "@/store/chat";
 import type { SubagentLiveState } from "@/store/session-reducer";
-import { SubagentInspector } from "./SubagentInspector";
 
 export type SubagentStatus = AgentProgress["status"];
 
@@ -46,15 +45,55 @@ export const SOURCE_VARIANT: Record<AgentSource, BadgeVariant> = {
   project: "warn",
 };
 
+/** Max characters for a row/header label before it is truncated. */
+const LABEL_MAX = 80;
+
+/** The boilerplate prefix every delegated worker prompt opens with. */
+const TASK_BOILERPLATE =
+  /^\s*Complete the assignment below,?\s*thoroughly:?\s*/i;
+
+function truncateLabel(text: string): string {
+  return text.length > LABEL_MAX
+    ? `${text.slice(0, LABEL_MAX).trimEnd()}…`
+    : text;
+}
+
+/** First non-empty line of a block, sans leading markdown / list / punctuation. */
+function firstMeaningfulLine(block: string): string {
+  for (const raw of block.split(/\r?\n/)) {
+    const line = raw.replace(/^[\s#>*\-–—:.]+/, "").trim();
+    if (line) return line;
+  }
+  return "";
+}
+
+/**
+ * Distil a concise title from a worker's verbose assignment prompt: drop the
+ * "Complete the assignment…" boilerplate, prefer the first clause of a
+ * `# Target` section, else the first meaningful line. Never the whole prompt.
+ */
+function labelFromTask(task: string): string {
+  const body = task.replace(TASK_BOILERPLATE, "");
+  const target = body.match(/#+\s*Target\b[ \t:]*([\s\S]*?)(?:\r?\n\s*#|$)/i);
+  const targetText = target?.[1];
+  const candidate =
+    (targetText && firstMeaningfulLine(targetText)) ||
+    firstMeaningfulLine(body);
+  return candidate.replace(/\s+/g, " ").trim();
+}
+
 /** Best human label for a subagent row / inspector header. */
 export function subagentLabel(sub: SubagentSnapshot): string {
-  return (
-    sub.description?.trim() ||
-    sub.task?.trim() ||
-    sub.agent ||
-    sub.id ||
-    "agent"
-  );
+  const description = sub.description?.trim();
+  if (description) return truncateLabel(description);
+
+  const task = sub.task?.trim();
+  if (task) {
+    const label = labelFromTask(task);
+    if (label) return truncateLabel(label);
+  }
+
+  return sub.agent || sub.id || "agent";
 }
 
 interface SubagentNode {
@@ -139,10 +178,10 @@ function NodeTicker({ progress }: { progress: AgentProgress }) {
 
 function NodeView({
   node,
-  onSelect,
+  onInspect,
 }: {
   node: SubagentNode;
-  onSelect: (id: string) => void;
+  onInspect: (id: string) => void;
 }) {
   const { sub, progress, children } = node;
   const actions = (
@@ -151,7 +190,7 @@ function NodeView({
       <Badge variant={STATUS_VARIANT[sub.status]}>{sub.status}</Badge>
       <IconButton
         label={`Inspect ${subagentLabel(sub)}`}
-        onClick={() => onSelect(sub.id)}
+        onClick={() => onInspect(sub.id)}
         className="h-6 w-6"
       >
         <Eye className="h-3.5 w-3.5" />
@@ -182,7 +221,7 @@ function NodeView({
     >
       {progress && <NodeTicker progress={progress} />}
       {children.map((child) => (
-        <NodeView key={child.sub.id} node={child} onSelect={onSelect} />
+        <NodeView key={child.sub.id} node={child} onInspect={onInspect} />
       ))}
     </Collapsible>
   );
@@ -193,13 +232,13 @@ const EMPTY_EVENTS: Record<string, SubagentLiveState> = {};
 
 export function SubagentTree({
   headerLeading,
+  onInspect,
 }: {
   headerLeading?: ReactNode;
-} = {}) {
+  onInspect: (subagentId: string) => void;
+}) {
   const roster = useActiveSession((s) => s?.subagents ?? EMPTY_SUBAGENTS);
   const events = useActiveSession((s) => s?.subagentEvents ?? EMPTY_EVENTS);
-  const sessionId = useActiveSession((s) => s?.sessionId);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
 
   // chat.getSubagents returns the richer SubagentSnapshot at runtime; the slice
   // field type still reads as the legacy SubagentInfo. Cast once here (same
@@ -209,19 +248,6 @@ export function SubagentTree({
     () => buildSubagentTree(subagents, events),
     [subagents, events],
   );
-  const selected = selectedId
-    ? subagents.find((s) => s.id === selectedId)
-    : undefined;
-
-  if (selected && sessionId) {
-    return (
-      <SubagentInspector
-        subagent={selected}
-        sessionId={sessionId}
-        onBack={() => setSelectedId(null)}
-      />
-    );
-  }
 
   return (
     <Panel
@@ -239,7 +265,7 @@ export function SubagentTree({
       ) : (
         <div className="space-y-1">
           {tree.map((node) => (
-            <NodeView key={node.sub.id} node={node} onSelect={setSelectedId} />
+            <NodeView key={node.sub.id} node={node} onInspect={onInspect} />
           ))}
         </div>
       )}
