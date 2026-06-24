@@ -1,22 +1,22 @@
-# PRD — OMP Native Zed slice
+# PRD — OMP Studio slice
 
-Use the glossary in `.agents/contract/domain.md`. Publish durable specs as Linear documents on the OMP Native Zed project.
+Use the glossary in `.agents/contract/domain.md`. Publish durable specs as Linear documents on the OMP Studio project.
 
 ## Problem
 
-What specific gap prevents OMP Native Zed from advancing, in user-visible terms.
+What specific gap in OMP Studio this slice closes, in user-visible terms.
 
 ## Solution
 
-The smallest outcome that resolves the gap while preserving Zed primitives and OMP runtime/security boundaries.
+The smallest outcome that resolves the gap while preserving OMP Studio's runtime and security boundaries.
 
 ## User stories
 
-1. As a Zed user, I want the slice outcome, so I can use OMP inside the IDE without losing Zed's strengths.
+1. As an OMP Studio user, I want the slice outcome, so I can <benefit>.
 
 ## Decisions
 
-Record only decisions this slice owns. Preserve these defaults unless the issue explicitly overrides them: ACP/custom-agent spine first, OmpHost runtime seam, no Electron cockpit transplant, no browser/terminal writes before their gates.
+Record only decisions this slice owns. Preserve these defaults unless the issue explicitly overrides them: terminal/browser stay user-initiated and gated; secrets stay in the OS keychain.
 
 ## Non-goals
 
@@ -29,7 +29,7 @@ Record only decisions this slice owns. Preserve these defaults unless the issue 
 
 ## Proof plan
 
-Map each criterion to the highest useful existing seam: fake JSONL, unit mapping, native Zed smoke, visual runner, security smoke, or HITL live OMP proof.
+Map each criterion to the highest useful existing gate: unit/vitest, bun test, fake-JSONL RPC test, hermetic e2e smoke, or HITL live OMP proof.
 
 ## Open questions / further notes
 

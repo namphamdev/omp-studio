@@ -2,14 +2,14 @@
 
 ## Goal
 
-State the single tracer-bullet outcome in OMP Native Zed glossary terms.
+State the single tracer-bullet outcome in OMP Studio glossary terms.
 
 ## Context
 
-- Project: OMP Native Zed.
-- Parent: AGE-637 unless this is a sub-issue.
-- Implementation repo: `omp-studio` planning repo for contract/planning work, or the Zed fork after it exists.
-- Prior decision: ACP/custom-agent spine first; OmpHost is the runtime seam; no Electron cockpit transplant.
+- Project: OMP Studio.
+- Parent: the relevant epic (e.g. AGE-655) unless this is a sub-issue.
+- Repo: `DylanMcCavitt/omp-studio`.
+- Prior decisions: terminal/browser are user-initiated and gated; secrets stay in the OS keychain, never tracked files.
 
 ## Acceptance
 
@@ -35,4 +35,4 @@ State the single tracer-bullet outcome in OMP Native Zed glossary terms.
 
 ## Proof
 
-List the exact fake, unit, native smoke, visual, security, and HITL checks required to prove this slice without expanding scope.
+List the exact unit, vitest, bun, e2e-smoke, and HITL checks required to prove this slice without expanding scope.

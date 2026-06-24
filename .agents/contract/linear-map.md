@@ -1,26 +1,20 @@
-# Linear map — OMP Native Zed
+# Linear map — OMP Studio
 
-This contract binds the OMP Native Zed workstream to Linear and GitHub delivery. Read this before `dispatch`, `ghosts`, `robots`, `rocket-launch`, or any handoff.
+Binds the OMP Studio app to Linear and GitHub delivery. Read this before `inserter`, `ghosts`, `roboports`, `rocket-launch`, or any handoff.
 
 ## Scope
 
-- Planning/bridge repo: `DylanMcCavitt/omp-studio`, local checkout `port-omp`, default branch `main`.
-- Implementation target: a Zed fork, not this Electron app. As of 2026-06-23, no local checkout or GitHub repo named `DylanMcCavitt/zed` was found. AGE-639 must create/check out the fork before code work.
-- Expected upstream: `zed-industries/zed`, default branch `main`. Verify the actual fork owner/name/default branch in the AGE-639 worktree before editing Zed code.
-- No OMP Studio Electron cockpit transplant. The Zed fork keeps Zed primitives and adds OMP through ACP/custom-agent first, then fork-owned native seams where needed.
+- Repo: `DylanMcCavitt/omp-studio`, local checkout `port-omp`, default branch `main`.
+- OMP Studio is the Electron cockpit for the Oh My Pi (`omp`) coding-agent harness. All app work happens directly in this repo.
+- The "OMP Native Zed" Zed-fork workstream is a separate Linear project with its own repo — not tracked here.
 
 ## Linear binding
 
 | Field | Value |
 | --- | --- |
 | Team | `dmcc` / key `AGE` |
-| Project | `OMP Native Zed` |
-| Project URL | https://linear.app/dylanmccavitt/project/omp-native-zed-8ded4620e7fd |
-| Project state | `Planned` |
-| Initiative | `OMP Studio` |
-| Parent issue | `AGE-637` — OMP-native Zed fork |
-| First contract issue | `AGE-638` |
-| First implementation issue | `AGE-639` |
+| Project | `OMP Studio` |
+| Production-readiness epic | `AGE-655` |
 
 ## Workflow states
 
@@ -32,7 +26,7 @@ Use real `dmcc` states only.
 | backlog | `Backlog` | backlog | Ordered but not ready to start. |
 | ready-for-agent | `Ready` | unstarted | Agent can start without more user input. |
 | planned-todo | `Todo` | unstarted | Accepted work queued for a specific slice. |
-| blocked / needs-info | `Blocked` | unstarted | Waiting on missing repo, credential, human decision, or dependency. |
+| blocked / needs-info | `Blocked` | unstarted | Waiting on missing credential, human decision, or dependency. |
 | in-progress | `In Progress` | started | One issue is actively being built on its branch/worktree. |
 | needs-rework | `Rework` | started | Direction changed or scope needs re-cutting. |
 | in-review | `In Review` | started | PR/review packet exists. |
@@ -45,48 +39,55 @@ Use real `dmcc` states only.
 
 ## Labels
 
-### Project labels
+These are the labels in active use on the OMP Studio project. Prefer them; do not invent parallel names.
+
+### Area
 
 | Label | Use |
 | --- | --- |
-| `codex` | Runtime, backend, integration, testing, security, infra. Default for AGE-638/AGE-639. |
-| `claude` | UI/design implementation lanes. |
-| `design` | Design-sensitive UI/UX decisions and visual proof. |
+| `area:renderer` | React renderer (`src/renderer`). |
+| `area:main` | Electron main process (`src/main`). |
+| `area:platform` | Native deps, packaging, release, terminal/browser backends, infra. |
+| `area:shared` | Cross-process contracts (`src/shared`). |
+| `area:rpc-bridge` | omp RPC/JSONL bridge (`src/main/omp`). |
+| `area:design-ux` | Visual identity, tokens, design-sensitive UI. |
 
-### Issue labels used by this track
+### Team / model
 
 | Label | Use |
 | --- | --- |
-| `symphony` | Runnable by autonomous agents from Linear state. |
-| `codex` | GPT/codex-owned engineering slice. |
-| `claude` | Claude-owned UI/design slice. |
+| `team:ui` | UI/design implementation lanes. |
+| `team:platform` | Runtime/backend/integration/infra lanes. |
+| `model:opus` / `model:gpt5.5` | Owning model lane for the slice. |
+
+### Type / risk / runnability
+
+| Label | Use |
+| --- | --- |
+| `Feature` | New user-visible capability. |
+| `Bug` | Defect/regression. |
+| `Improvement` | Enhancement/workflow improvement. |
 | `risk:low` | Small, well-understood change with no sensitive boundary. |
 | `risk:medium` | UX-sensitive, public API, or first-touch integration work. |
 | `risk:high` | Security boundary, credentials, signing/distribution, browser/terminal control, or external-account writes. |
-| `Improvement` | Enhancement/workflow improvement. |
-| `Feature` | New user-visible capability. |
-| `Bug` | Defect/regression. |
+| `symphony` | Runnable by autonomous agents from Linear state. |
 
-Existing OMP Studio area/team/model labels remain valid for this repo, but OMP Native Zed ghosts should prefer the labels above until Zed-fork-specific labels are created.
+## Estimates and priority
 
-## Milestones, estimates, and priority
-
-- Project milestones: none configured on 2026-06-23.
-
-| Linear estimate | Use for OMP Native Zed ghosts |
+| Linear estimate | Use |
 | --- | --- |
 | None / unset | Planning-only or bookkeeping issues where effort is not useful. |
-| `1` | Contract/docs/config-only slice with no runtime behavior. |
+| `1` | Docs/config-only slice with no runtime behavior. |
 | `2` | Small single-surface implementation or test slice. |
-| `3` | Tracer bullet crossing runtime/integration/test seams. |
-| `5+` | Too large for one robot branch by default; split into child issues unless explicitly approved. |
+| `3` | Tracer bullet crossing renderer/main/test seams. |
+| `5+` | Too large for one branch by default; split into child issues unless explicitly approved. |
 
 - Existing issue estimates are preserved; agents do not rewrite them during implementation unless the issue asks for estimation.
-- Priority mapping: Linear `1 Urgent`, `2 High`, `3 Medium`, `4 Low`, `0 None`. The OMP Native Zed project and AGE-638 are `2 High`.
+- Priority mapping: Linear `1 Urgent`, `2 High`, `3 Medium`, `4 Low`, `0 None`.
 
 ## HITL / AFK classification
 
-Every issue description must include an `Execution` section with exactly one mode.
+Every issue description includes an `Execution` section with exactly one mode.
 
 | Mode | Criteria |
 | --- | --- |
@@ -98,14 +99,12 @@ If a slice starts AFK and later needs HITL behavior, stop and update the issue b
 ## GitHub / Linear bridge
 
 - One Linear issue -> one branch/worktree -> one PR.
-- Branch names must carry the Linear issue id. Prefer Linear's generated branch name, for example `dylanmccavitt2015/age-638-zed-00-publish-factorio-contract-for-omp-native-zed-ghosts`.
-- Local worktrees live under `/private/tmp/omp-wt/<lowercase-issue-id>` unless the target repo contract says otherwise.
+- Branch names must carry the Linear issue id. Prefer Linear's generated branch name, e.g. `dylanmccavitt2015/age-667-platform-terminal-fails-to-start-node-pty-spawn-helper-not`.
+- Local worktrees live under `/private/tmp/omp-wt/<lowercase-issue-id>`.
 - PR body uses the repo template in `.agents/contract/templates/pull-request.md` and references the Linear issue id.
-- Merge through the GitHub/Linear bridge; do not manually close Linear issues from an implementation agent.
+- Merge through the GitHub/Linear bridge (squash merge closes the issue); do not manually close Linear issues from an implementation agent.
 
-## Dependency spine
+## Gated work
 
-- AGE-638 blocks AGE-639.
-- AGE-639 blocks AGE-640, AGE-641, and AGE-642.
-- Browser work is blocked until AGE-647 proves the security boundary.
-- Terminal/task writes stay off by default and blocked until approval/UI and boundary slices exist.
+- Terminal and browser are user-initiated and off by default. Agent frames never write directly to pty input; the browser stays in its sandboxed boundary (separate WebContents, http(s)-only, no OMP bridge/preload/Node, ephemeral storage).
+- macOS signing/notarization is deferred (`AGE-589`) — it needs Apple Developer credentials and is out of scope for autonomous work.

@@ -1,29 +1,27 @@
-# OMP Studio / OMP Native Zed agent context
+# OMP Studio agent context
 
 ## Agent skills
 
 This repo runs the Factorio workflow kit. The per-repo contract is in `.agents/contract/` — read it before planning or building:
 
-- `linear-map.md` — Linear team/project/label/state map, HITL/AFK rules, implementation target, and the GitHub bridge.
-- `domain.md` — OMP Native Zed glossary and preserved architecture decisions.
-- `commands.md` — observed build/test/lint/run commands for this planning repo and expected Zed-fork commands.
+- `linear-map.md` — Linear team/project/label/state map, HITL/AFK rules, and the GitHub bridge.
+- `domain.md` — OMP Studio glossary and preserved architecture decisions.
+- `commands.md` — build/test/lint/run commands for the app.
 - `templates/` — repo-local PR, Linear issue, project-doc, and PRD templates.
 
-Repo-specific skills and agents live in `.agents/skills/` and `.agents/agents/` when a real recurring workflow needs them. None are scaffolded yet; generic kit skills plus this contract are enough for AGE-638.
+Repo-specific skills and agents live in `.agents/skills/` and `.agents/agents/` when a real recurring workflow needs them. None are scaffolded yet; generic kit skills plus this contract are enough.
 
 ## Current track
 
-- Planning/bridge repo: `DylanMcCavitt/omp-studio` on `main`.
-- Linear project: `OMP Native Zed` (`AGE` team / `dmcc`).
-- Parent issue: `AGE-637`.
-- Contract issue: `AGE-638`.
-- First implementation issue: `AGE-639`.
-- Zed fork repo is not checked out yet; AGE-639 must create/check out the fork and verify its default branch before code changes.
+- Repo: `DylanMcCavitt/omp-studio`, local checkout `port-omp`, default branch `main`.
+- Linear team `dmcc` (key `AGE`), project `OMP Studio`.
+- Production-readiness epic: `AGE-655`.
+- OMP Studio is the Electron + electron-vite + React 18 desktop cockpit for the Oh My Pi (`omp`) coding-agent harness. All app work happens directly in this repo — there is no fork.
 
 ## Rules
 
 - Preserve unrelated user changes.
 - One Linear issue -> one branch/worktree -> one PR; branch names must carry the `AGE-###` id.
-- Use `/private/tmp/omp-wt/<lowercase-issue-id>` for issue worktrees unless the target repo contract overrides it.
+- Use `/private/tmp/omp-wt/<lowercase-issue-id>` for issue worktrees.
 - Do not put secrets, keys, tokens, account IDs, or private environment values in tracked files.
-- Do not transplant OMP Studio's Electron cockpit into Zed. Use Zed primitives first; add fork-native panels only after ACP/runtime proof.
+- Terminal and browser writes are user-initiated and gated; agent frames never write directly to pty input, and the browser stays in its sandboxed boundary.
