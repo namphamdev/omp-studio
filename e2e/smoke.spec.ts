@@ -75,6 +75,7 @@ const RAIL_DESTINATIONS: readonly {
   {
     label: "Linear",
     assertRendered: async (panel) => {
+      await heading("Linear")(panel);
       await expect(panel.getByLabel("Linear API key")).toBeVisible();
     },
   },
