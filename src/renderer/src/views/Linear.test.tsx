@@ -5,7 +5,7 @@
 
 import type { LinearIssue, LinearStatusInfo } from "@shared/domain";
 import type { OmpApi } from "@shared/ipc";
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { useLinearStore } from "@/store/linear";
 import Linear from "./Linear";
@@ -107,4 +107,87 @@ it("renders fetched issues and narrows them with the project filter", async () =
   expect(screen.queryByText("Add export")).not.toBeInTheDocument();
   // The filter is local: issues were fetched exactly once (initial load).
   expect(window.omp.linear.listIssues).toHaveBeenCalledTimes(1);
+});
+
+it("groups fetched issues by workflow state", async () => {
+  const issues = [
+    issue({ id: "age-1", title: "Plan next slice" }),
+    issue({
+      id: "age-2",
+      title: "Ship panel",
+      state: { name: "In Progress", type: "started" },
+    }),
+    issue({ id: "age-3", title: "Refine copy" }),
+    issue({
+      id: "age-4",
+      title: "Merged slice",
+      state: { name: "Done", type: "completed" },
+    }),
+  ];
+  stubLinear({
+    status: vi.fn().mockResolvedValue(AUTHED),
+    listIssues: vi.fn().mockResolvedValue(issues),
+  });
+
+  render(<Linear />);
+
+  const todoGroup = await screen.findByRole("region", { name: "Todo" });
+  const runningGroup = screen.getByRole("region", { name: "In Progress" });
+  const doneGroup = screen.getByRole("region", { name: "Done" });
+
+  expect(within(todoGroup).getAllByRole("button")).toHaveLength(2);
+  expect(within(todoGroup).getByText("Plan next slice")).toBeInTheDocument();
+  expect(within(todoGroup).getByText("Refine copy")).toBeInTheDocument();
+  expect(within(runningGroup).getByText("Ship panel")).toBeInTheDocument();
+  expect(within(doneGroup).getByText("Merged slice")).toBeInTheDocument();
+});
+
+it("renders Linear state dots in the live-dot language", async () => {
+  const issues = [
+    issue({
+      id: "age-1",
+      title: "Ship panel",
+      state: { name: "In Progress", type: "started" },
+    }),
+    issue({ id: "age-2", title: "Plan next slice" }),
+    issue({
+      id: "age-3",
+      title: "Merged slice",
+      state: { name: "Done", type: "completed" },
+    }),
+  ];
+  stubLinear({
+    status: vi.fn().mockResolvedValue(AUTHED),
+    listIssues: vi.fn().mockResolvedValue(issues),
+  });
+
+  render(<Linear />);
+
+  const runningRow = (await screen.findByText("Ship panel")).closest("button");
+  const todoRow = screen.getByText("Plan next slice").closest("button");
+  const doneRow = screen.getByText("Merged slice").closest("button");
+  expect(runningRow).not.toBeNull();
+  expect(todoRow).not.toBeNull();
+  expect(doneRow).not.toBeNull();
+
+  const runningDot = (runningRow as HTMLElement).querySelector(
+    '[data-state-dot="running"]',
+  ) as HTMLElement;
+  expect(runningDot).toHaveAttribute("data-state-dot", "running");
+  expect(runningDot.className).toContain("animate-omp-pulse");
+  expect(runningDot).toHaveStyle({ backgroundColor: "#f2c94c" });
+
+  const todoDot = (todoRow as HTMLElement).querySelector(
+    '[data-state-dot="todo"]',
+  ) as HTMLElement;
+  expect(todoDot).toHaveAttribute("data-state-dot", "todo");
+  expect(todoDot.className).not.toContain("animate-omp-pulse");
+  expect(todoDot).toHaveStyle({ boxShadow: "inset 0 0 0 1.5px #6c6c78" });
+
+  const doneDot = (doneRow as HTMLElement).querySelector(
+    '[data-state-dot="done"]',
+  ) as HTMLElement;
+  expect(doneDot).toHaveAttribute("data-state-dot", "done");
+  expect(doneDot).toHaveStyle({ backgroundColor: "#5e6ad2" });
+  expect(doneDot.querySelector("svg")).not.toBeNull();
 });

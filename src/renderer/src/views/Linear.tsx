@@ -5,7 +5,9 @@
 // (`status.status !== "authenticated"`) the whole view collapses to the
 // connect card. State lives in `store/linear.ts`; this view only drives it.
 
+import type { LinearIssue } from "@shared/domain";
 import {
+  Check,
   CircleDot,
   ListFilter,
   RefreshCw,
@@ -13,7 +15,7 @@ import {
   TriangleAlert,
   Users,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { type CSSProperties, useEffect, useMemo, useState } from "react";
 import { LinearConnectCard } from "@/components/linear/LinearConnectCard";
 import {
   Badge,
@@ -50,6 +52,85 @@ const STATE_VARIANT: Record<string, BadgeVariant> = {
   backlog: "muted",
   triage: "warn",
 };
+
+type LinearStateTone = "running" | "todo" | "done";
+
+const STATE_TONE: Record<string, LinearStateTone> = {
+  started: "running",
+  completed: "done",
+  unstarted: "todo",
+  backlog: "todo",
+  triage: "todo",
+  canceled: "todo",
+};
+
+interface IssueStateGroup {
+  key: string;
+  name: string;
+  type: string;
+  issues: LinearIssue[];
+}
+
+function groupIssuesByState(issues: LinearIssue[]): IssueStateGroup[] {
+  const groups = new Map<string, IssueStateGroup>();
+  for (const issue of issues) {
+    const key = `${issue.state.type}:${issue.state.name}`;
+    const group = groups.get(key);
+    if (group) {
+      group.issues.push(issue);
+    } else {
+      groups.set(key, {
+        key,
+        name: issue.state.name,
+        type: issue.state.type,
+        issues: [issue],
+      });
+    }
+  }
+  return [...groups.values()];
+}
+
+function StateDot({ type }: { type: string }) {
+  const tone = STATE_TONE[type] ?? "todo";
+
+  if (tone === "running") {
+    return (
+      <span
+        aria-hidden
+        data-state-dot={tone}
+        className="h-2.5 w-2.5 shrink-0 animate-omp-pulse rounded-full"
+        style={
+          {
+            backgroundColor: "#f2c94c",
+            "--omp-glow": "rgba(242, 201, 76, 0.55)",
+          } as CSSProperties
+        }
+      />
+    );
+  }
+
+  if (tone === "done") {
+    return (
+      <span
+        aria-hidden
+        data-state-dot={tone}
+        className="flex h-3.5 w-3.5 shrink-0 items-center justify-center rounded-full text-white"
+        style={{ backgroundColor: "#5e6ad2" }}
+      >
+        <Check className="h-2.5 w-2.5" strokeWidth={3} />
+      </span>
+    );
+  }
+
+  return (
+    <span
+      aria-hidden
+      data-state-dot={tone}
+      className="h-2.5 w-2.5 shrink-0 rounded-full"
+      style={{ boxShadow: "inset 0 0 0 1.5px #6c6c78" }}
+    />
+  );
+}
 
 export default function Linear() {
   const status = useLinearStore((s) => s.status);
@@ -91,10 +172,14 @@ export default function Linear() {
     void loadIssues({ teamId: teamId || undefined, assignedToMe });
   }, [authed, teamId, assignedToMe, loadIssues]);
 
-  // Project is a client-side narrowing over the already-fetched set.
-  const visible = projectName
-    ? issues.filter((i) => i.project?.name === projectName)
-    : issues;
+  const visible = useMemo(
+    () =>
+      projectName
+        ? issues.filter((i) => i.project?.name === projectName)
+        : issues,
+    [issues, projectName],
+  );
+  const visibleGroups = useMemo(() => groupIssuesByState(visible), [visible]);
 
   const teamOptions = [
     { value: "", label: "All teams" },
@@ -235,51 +320,79 @@ export default function Linear() {
                 hint="Nothing matches the current filters."
               />
             ) : (
-              <div className="space-y-2">
-                {visible.map((issue) => {
-                  const priority =
-                    issue.priority != null
-                      ? PRIORITY[issue.priority]
-                      : undefined;
+              <div className="space-y-5">
+                {visibleGroups.map((group, index) => {
+                  const headingId = `linear-state-${index}`;
                   return (
-                    <button
-                      key={issue.id}
-                      type="button"
-                      onClick={() => window.omp.openExternal(issue.url)}
-                      className={ROW}
-                    >
-                      <div className="flex items-center gap-2">
-                        <span className="font-mono text-xs text-ink-faint">
-                          {issue.identifier}
-                        </span>
-                        <span className="flex-1 truncate text-sm text-ink">
-                          {issue.title}
-                        </span>
-                        {priority && (
-                          <Badge variant={priority.variant}>
-                            {priority.label}
-                          </Badge>
-                        )}
-                        <Badge
-                          variant={STATE_VARIANT[issue.state.type] ?? "muted"}
+                    <section key={group.key} aria-labelledby={headingId}>
+                      <div className="mb-2 flex items-center gap-2">
+                        <StateDot type={group.type} />
+                        <h2
+                          id={headingId}
+                          className="text-xs font-semibold uppercase tracking-wide text-ink-muted"
                         >
-                          {issue.state.name}
-                        </Badge>
+                          {group.name}
+                        </h2>
+                        <span className="text-xs text-ink-faint">
+                          {group.issues.length}
+                        </span>
                       </div>
-                      <div className="flex flex-wrap items-center gap-2 pl-0 text-xs text-ink-faint">
-                        {issue.team?.key && (
-                          <Badge variant="muted">{issue.team.key}</Badge>
-                        )}
-                        {issue.project?.name && (
-                          <span>{issue.project.name}</span>
-                        )}
-                        {issue.assignee?.name && (
-                          <span>{issue.assignee.name}</span>
-                        )}
-                        <span>·</span>
-                        <span>{formatRelativeTime(issue.updatedAt)}</span>
+                      <div className="space-y-2">
+                        {group.issues.map((issue) => {
+                          const priority =
+                            issue.priority != null
+                              ? PRIORITY[issue.priority]
+                              : undefined;
+                          return (
+                            <button
+                              key={issue.id}
+                              type="button"
+                              onClick={() => window.omp.openExternal(issue.url)}
+                              className={ROW}
+                            >
+                              <div className="flex items-center gap-2">
+                                <StateDot type={issue.state.type} />
+                                <span className="font-mono text-xs text-ink-faint">
+                                  {issue.identifier}
+                                </span>
+                                <span className="flex-1 truncate text-sm text-ink">
+                                  {issue.title}
+                                </span>
+                                {priority && (
+                                  <Badge variant={priority.variant}>
+                                    {priority.label}
+                                  </Badge>
+                                )}
+                                <Badge
+                                  variant={
+                                    STATE_VARIANT[issue.state.type] ?? "muted"
+                                  }
+                                >
+                                  {issue.state.name}
+                                </Badge>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-2 pl-4 text-xs text-ink-faint">
+                                {issue.team?.key && (
+                                  <Badge variant="muted">
+                                    {issue.team.key}
+                                  </Badge>
+                                )}
+                                {issue.project?.name && (
+                                  <span>{issue.project.name}</span>
+                                )}
+                                {issue.assignee?.name && (
+                                  <span>{issue.assignee.name}</span>
+                                )}
+                                <span>·</span>
+                                <span>
+                                  {formatRelativeTime(issue.updatedAt)}
+                                </span>
+                              </div>
+                            </button>
+                          );
+                        })}
                       </div>
-                    </button>
+                    </section>
                   );
                 })}
               </div>
