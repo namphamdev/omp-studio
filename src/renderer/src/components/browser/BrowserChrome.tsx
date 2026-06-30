@@ -1,5 +1,5 @@
-// Toolbar for the embedded browser: back / forward / reload, an editable
-// address field (free-text → navigate), a Go submit, and a history dropdown.
+// Chrome for the embedded browser: tab strip, back / forward / reload, an
+// editable address field (free-text → navigate), a Go submit, and history.
 //
 // "Omnibox via Combobox for history": the Combobox primitive is the sanctioned
 // filterable picker, but it only SELECTS from a fixed option list — it cannot
@@ -15,17 +15,38 @@ import {
   Bug,
   CornerDownLeft,
   ExternalLink,
+  Plus,
   RotateCw,
+  X,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
 import { Combobox, IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 
+export interface BrowserTab {
+  id: string;
+  title: string;
+  url: string;
+  loading: boolean;
+}
+
+const TAB_BASE =
+  "flex shrink-0 items-center gap-1.5 rounded-md px-2.5 py-1 text-xs font-medium transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60";
+const TAB_ACTIVE = "bg-bg-hover text-ink";
+const TAB_INACTIVE = "text-ink-muted hover:bg-bg-hover/60 hover:text-ink";
+
 export interface BrowserChromeProps {
-  /** Latest nav state for the live view, or null before one is created. */
+  /** Open browser tabs mirrored from the store. */
+  tabs: BrowserTab[];
+  /** Active browser tab id. */
+  activeTabId: string | null;
+  /** Latest nav state for the active view, or null before one is created. */
   state: BrowserViewState | null;
   /** Visited URLs (most-recent first) backing the history dropdown. */
   history: string[];
+  onCreateTab: () => void;
+  onSwitchTab: (id: string) => void;
+  onCloseTab: (id: string) => void;
   onNavigate: (url: string) => void;
   onBack: () => void;
   onForward: () => void;
@@ -57,8 +78,13 @@ function toUrl(raw: string): { url: string | null; error?: string } {
 }
 
 export function BrowserChrome({
+  tabs,
+  activeTabId,
   state,
   history,
+  onCreateTab,
+  onSwitchTab,
+  onCloseTab,
   onNavigate,
   onBack,
   onForward,
@@ -70,15 +96,26 @@ export function BrowserChrome({
   const [inputError, setInputError] = useState<string | undefined>();
 
   // Mirror the committed URL into the address bar, but never clobber an
-  // in-progress edit: adopt the live URL only when it actually changes.
+  // in-progress edit within the same tab. A tab switch is different: always
+  // adopt the new active tab's current URL and clear local validation state,
+  // even when both tabs are blank.
   const liveUrl = state?.url ?? "";
   const lastUrl = useRef(liveUrl);
+  const lastActiveTabId = useRef(activeTabId);
   useEffect(() => {
+    if (activeTabId !== lastActiveTabId.current) {
+      lastActiveTabId.current = activeTabId;
+      lastUrl.current = liveUrl;
+      setAddress(liveUrl);
+      setInputError(undefined);
+      return;
+    }
+
     if (liveUrl !== lastUrl.current) {
       lastUrl.current = liveUrl;
       setAddress(liveUrl);
     }
-  }, [liveUrl]);
+  }, [activeTabId, liveUrl]);
 
   const go = (raw: string) => {
     const next = toUrl(raw);
@@ -88,6 +125,55 @@ export function BrowserChrome({
 
   return (
     <div className="shrink-0 border-b border-border">
+      <div
+        role="tablist"
+        aria-label="Browser tabs"
+        className="flex h-9 items-center gap-0.5 overflow-x-auto border-b border-border-subtle bg-bg-raised px-1.5"
+      >
+        {tabs.map((tab, index) => {
+          const label = tab.title || tab.url || "New tab";
+          const position = index + 1;
+          const active = tab.id === activeTabId;
+          return (
+            <div key={tab.id} className="relative flex shrink-0 items-stretch">
+              <button
+                type="button"
+                role="tab"
+                aria-selected={active}
+                aria-label={`Tab ${position}: ${label}`}
+                title={tab.url || label}
+                onClick={() => onSwitchTab(tab.id)}
+                className={cn(
+                  TAB_BASE,
+                  "pr-7",
+                  active ? TAB_ACTIVE : TAB_INACTIVE,
+                )}
+              >
+                <span className="max-w-[11rem] truncate">{label}</span>
+                {tab.loading && (
+                  <span className="h-1.5 w-1.5 shrink-0 rounded-full bg-accent" />
+                )}
+              </button>
+              <button
+                type="button"
+                aria-label={`Close tab ${position}: ${label}`}
+                onClick={() => onCloseTab(tab.id)}
+                className="absolute right-1 top-1/2 inline-flex h-5 w-5 -translate-y-1/2 items-center justify-center rounded text-ink-faint transition-colors hover:bg-bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+              >
+                <X size={14} />
+              </button>
+            </div>
+          );
+        })}
+        <button
+          type="button"
+          aria-label="New browser tab"
+          onClick={onCreateTab}
+          className={cn(TAB_BASE, TAB_INACTIVE)}
+        >
+          <Plus size={14} className="shrink-0" />
+        </button>
+      </div>
       <div className="flex items-center gap-1.5 px-3 py-2">
         <IconButton label="Back" disabled={!state?.canGoBack} onClick={onBack}>
           <ArrowLeft className="h-4 w-4" />
@@ -99,7 +185,7 @@ export function BrowserChrome({
         >
           <ArrowRight className="h-4 w-4" />
         </IconButton>
-        <IconButton label="Reload" onClick={onReload}>
+        <IconButton label="Reload" disabled={!state} onClick={onReload}>
           <RotateCw
             className={cn("h-4 w-4", state?.loading && "animate-spin")}
           />
@@ -123,7 +209,7 @@ export function BrowserChrome({
           className="flex min-w-0 flex-1 items-center gap-1.5"
           onSubmit={(e) => {
             e.preventDefault();
-            go(address);
+            if (state) go(address);
           }}
         >
           <input
@@ -133,22 +219,25 @@ export function BrowserChrome({
               setInputError(undefined);
               setAddress(e.target.value);
             }}
-            placeholder="Enter an http(s) URL"
+            placeholder={
+              state ? "Enter an http(s) URL" : "Open a new tab first"
+            }
             spellCheck={false}
             autoCapitalize="off"
             autoCorrect="off"
+            disabled={!state}
             className={cn(
               "min-w-0 flex-1 rounded-lg border border-border-subtle bg-bg-raised px-3 py-1.5 text-sm text-ink",
               "placeholder:text-ink-faint focus:outline-none focus-visible:ring-2 focus-visible:ring-accent/60",
               inputError && "border-danger/60",
             )}
           />
-          <IconButton type="submit" label="Go">
+          <IconButton type="submit" label="Go" disabled={!state}>
             <CornerDownLeft className="h-4 w-4" />
           </IconButton>
         </form>
 
-        {history.length > 0 && (
+        {state && history.length > 0 && (
           <Combobox
             aria-label="History"
             className="w-44"
