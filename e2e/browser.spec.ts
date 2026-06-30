@@ -107,16 +107,38 @@ test.afterAll(async () => {
     rmSync(tempWorkspaceDir, { recursive: true, force: true });
 });
 
-test("enabled browser navigates to a local fixture and records state", async () => {
+test("browser tabs create, switch, navigate, and close from the UI", async () => {
   await page.getByRole("button", { name: "Browser", exact: true }).click();
   const panel = page.getByRole("complementary", { name: "Browser panel" });
   await expect(panel.getByText("Start with an http(s) URL.")).toBeVisible();
 
+  const tabStrip = panel.getByLabel("Browser tabs");
+  await expect(tabStrip).toBeVisible();
+  await expect(tabStrip.getByText("New tab", { exact: true })).toHaveCount(1);
+
+  await panel.getByRole("button", { name: "New browser tab" }).click();
+  await expect(tabStrip.getByText("New tab", { exact: true })).toHaveCount(2);
+
   const address = panel.getByLabel("Address");
+  await expect(address).toHaveValue("");
   await address.fill(localUrl);
   await panel.getByRole("button", { name: "Go" }).click();
 
   await expect(panel.getByRole("combobox", { name: "History" })).toBeVisible();
+  await expect(address).toHaveValue(localUrl);
+  await expect(
+    tabStrip.getByText("OMP Browser Fixture", { exact: true }),
+  ).toBeVisible();
+
+  await tabStrip.getByText("New tab", { exact: true }).click();
+  await expect(address).toHaveValue("");
+  await expect(panel.getByText("Start with an http(s) URL.")).toBeVisible();
+
+  await tabStrip.getByText("OMP Browser Fixture", { exact: true }).click();
+  await expect(address).toHaveValue(localUrl);
+
+  await tabStrip.getByRole("button", { name: "Close tab 1: New tab" }).click();
+  await expect(tabStrip.getByText("New tab", { exact: true })).toHaveCount(0);
   await expect(address).toHaveValue(localUrl);
   await expect(panel.getByRole("alert")).toHaveCount(0);
   expect(pageErrors).toEqual([]);

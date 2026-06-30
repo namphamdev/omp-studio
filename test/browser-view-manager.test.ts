@@ -387,6 +387,58 @@ test("reload and setBounds delegate to the view", () => {
   expect(created[0]?.bounds).toEqual(next);
 });
 
+test("setBounds updates only the targeted view when multiple views exist", () => {
+  const { manager, created } = harness();
+  const first = manager.create({ url: "https://example.com", bounds: BOUNDS });
+  const second = manager.create({
+    url: "https://example.com/two",
+    bounds: { x: 1, y: 2, width: 300, height: 400 },
+  });
+
+  const next: ViewBounds = { x: 10, y: 20, width: 100, height: 200 };
+  manager.setBounds(first.id, next);
+
+  expect(created[0]?.bounds).toEqual(next);
+  expect(created[1]?.bounds).toEqual({ x: 1, y: 2, width: 300, height: 400 });
+
+  const later: ViewBounds = { x: 30, y: 40, width: 500, height: 600 };
+  manager.setBounds(second.id, later);
+
+  expect(created[0]?.bounds).toEqual(next);
+  expect(created[1]?.bounds).toEqual(later);
+});
+
+test("destroy tears down only the targeted view and keeps siblings navigable", () => {
+  const { manager, created } = harness();
+  const first = manager.create({ url: "https://example.com", bounds: BOUNDS });
+  const second = manager.create({
+    url: "https://example.com/two",
+    bounds: BOUNDS,
+  });
+  const firstWc = wcOf(created[0]);
+  const secondWc = wcOf(created[1]);
+
+  manager.destroy(first.id);
+
+  expect(firstWc.stopped).toBe(true);
+  expect(firstWc.closed).toBe(true);
+  expect(secondWc.stopped).toBe(false);
+  expect(secondWc.closed).toBe(false);
+
+  manager.navigate(first.id, "https://example.com/dead");
+  manager.navigate(second.id, "https://example.com/alive");
+
+  expect(firstWc.loadCalls).toEqual(["https://example.com"]);
+  expect(secondWc.loadCalls).toEqual([
+    "https://example.com/two",
+    "https://example.com/alive",
+  ]);
+
+  manager.destroyAll();
+  expect(secondWc.stopped).toBe(true);
+  expect(secondWc.closed).toBe(true);
+});
+
 test("destroy tears the view down and unregisters it", () => {
   const { manager, created } = harness();
   const { id } = manager.create({ url: "https://example.com", bounds: BOUNDS });
@@ -414,6 +466,8 @@ test("destroyAll closes every view and empties the registry", () => {
 test("unknown ids are silent no-ops (degrade, never throw)", () => {
   const { manager } = harness();
   expect(() => {
+    manager.openDevTools("nope");
+    manager.openExternal("nope");
     manager.navigate("nope", "https://example.com");
     manager.goBack("nope");
     manager.goForward("nope");

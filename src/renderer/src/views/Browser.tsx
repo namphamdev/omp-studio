@@ -6,13 +6,14 @@
 // Off by default (`settings.browser.enabled`). When disabled we show an honest
 // enable gate: the embedded browser loads UNTRUSTED remote content in a
 // separate sandboxed view — we state the model plainly and never call it
-// "secure". On unmount the view is destroyed and the subscription released.
+// "secure". On unmount all views are destroyed and the subscription released.
 
 import { Globe, Navigation, ShieldAlert } from "lucide-react";
-import { useLayoutEffect, useRef } from "react";
+import { useCallback, useLayoutEffect, useRef } from "react";
 import { BrowserChrome } from "@/components/browser/BrowserChrome";
 import { useBrowserBounds } from "@/components/browser/useBrowserBounds";
 import { Button, EmptyState } from "@/components/ui";
+import type { BrowserBounds } from "@/store/browser";
 import { useBrowserStore } from "@/store/browser";
 import { useSettingsStore } from "@/store/settings";
 
@@ -22,50 +23,52 @@ export default function Browser() {
   );
   const updateSettings = useSettingsStore((s) => s.update);
 
+  const tabs = useBrowserStore((s) => s.tabs);
   const viewId = useBrowserStore((s) => s.viewId);
   const state = useBrowserStore((s) => s.state);
   const history = useBrowserStore((s) => s.history);
   const error = useBrowserStore((s) => s.error);
+  const creating = useBrowserStore((s) => s.creating);
   const ensureSubscribed = useBrowserStore((s) => s.ensureSubscribed);
   const teardown = useBrowserStore((s) => s.teardown);
-  const createView = useBrowserStore((s) => s.create);
+  const createTab = useBrowserStore((s) => s.create);
+  const switchTo = useBrowserStore((s) => s.switchTo);
+  const closeTab = useBrowserStore((s) => s.close);
   const navigate = useBrowserStore((s) => s.navigate);
   const back = useBrowserStore((s) => s.back);
   const forward = useBrowserStore((s) => s.forward);
   const reload = useBrowserStore((s) => s.reload);
   const openDevTools = useBrowserStore((s) => s.openDevTools);
   const openExternal = useBrowserStore((s) => s.openExternal);
-  const destroy = useBrowserStore((s) => s.destroy);
+  const destroyAll = useBrowserStore((s) => s.destroyAll);
 
   const placeholderRef = useRef<HTMLDivElement>(null);
   useBrowserBounds(viewId, placeholderRef);
+  const createBlankTab = useCallback(() => {
+    void createTab({
+      url: "",
+      bounds: getPlaceholderBounds(placeholderRef.current),
+    });
+  }, [createTab]);
 
   // While this view is mounted (and the capability is on): subscribe to state
-  // pushes BEFORE creating, create the main-owned view once the placeholder has
-  // a measurable rect, then destroy the view + release the subscription on
+  // pushes BEFORE creating, create the first blank tab once the placeholder has
+  // a measurable rect, then destroy every view + release the subscription on
   // unmount (route change) or when the capability is turned off.
   useLayoutEffect(() => {
     if (!enabled) return;
     ensureSubscribed();
-    const el = placeholderRef.current;
-    if (el && !useBrowserStore.getState().viewId) {
-      const r = el.getBoundingClientRect();
-      void createView({
-        // No homepage in v2 (deferred); the view starts blank awaiting input.
-        url: "",
-        bounds: {
-          x: Math.round(r.left),
-          y: Math.round(r.top),
-          width: Math.round(r.width),
-          height: Math.round(r.height),
-        },
-      });
+    if (
+      placeholderRef.current &&
+      useBrowserStore.getState().tabs.length === 0
+    ) {
+      createBlankTab();
     }
     return () => {
-      destroy();
+      destroyAll();
       teardown();
     };
-  }, [enabled, ensureSubscribed, createView, destroy, teardown]);
+  }, [enabled, ensureSubscribed, createBlankTab, destroyAll, teardown]);
 
   if (!enabled) {
     return (
@@ -102,8 +105,13 @@ export default function Browser() {
   return (
     <div className="flex h-full flex-col">
       <BrowserChrome
+        tabs={tabs}
+        activeTabId={viewId}
         state={state}
         history={history}
+        onCreateTab={createBlankTab}
+        onSwitchTab={switchTo}
+        onCloseTab={closeTab}
         onNavigate={navigate}
         onBack={back}
         onForward={forward}
@@ -111,7 +119,13 @@ export default function Browser() {
         onOpenDevTools={openDevTools}
         onOpenExternal={openExternal}
       />
-      <BrowserPanelState state={state} error={error} />
+      <BrowserPanelState
+        state={state}
+        error={error}
+        hasTabs={tabs.length > 0}
+        creating={creating}
+        onCreateTab={createBlankTab}
+      />
       {/* Empty overlay target — the main-owned WebContentsView is positioned on
           top of this rect (see useBrowserBounds); no remote content lives here. */}
       <div ref={placeholderRef} className="min-h-0 flex-1" />
@@ -122,9 +136,15 @@ export default function Browser() {
 function BrowserPanelState({
   state,
   error,
+  hasTabs,
+  creating,
+  onCreateTab,
 }: {
   state: { url: string; loading: boolean; error?: string } | null;
   error: string | undefined;
+  hasTabs: boolean;
+  creating: boolean;
+  onCreateTab: () => void;
 }) {
   if (error) {
     return (
@@ -133,6 +153,27 @@ function BrowserPanelState({
         className="border-b border-danger/30 px-4 py-3 text-sm text-danger"
       >
         Browser view failed to start: {error}
+      </div>
+    );
+  }
+
+  if (!hasTabs) {
+    if (creating) return null;
+
+    return (
+      <div className="border-b border-border-subtle bg-bg-panel px-4 py-3">
+        <div className="flex items-center justify-between gap-3 text-sm">
+          <div>
+            <p className="font-medium text-ink">No browser tabs are open.</p>
+            <p className="mt-1 text-xs leading-5 text-ink-muted">
+              Open a new tab before entering an address.
+            </p>
+          </div>
+          <Button variant="subtle" onClick={onCreateTab}>
+            <Globe className="h-4 w-4" />
+            New browser tab
+          </Button>
+        </div>
       </div>
     );
   }
@@ -154,4 +195,14 @@ function BrowserPanelState({
       </div>
     </div>
   );
+}
+
+function getPlaceholderBounds(el: HTMLDivElement | null): BrowserBounds {
+  const r = el?.getBoundingClientRect();
+  return {
+    x: Math.round(r?.left ?? 0),
+    y: Math.round(r?.top ?? 0),
+    width: Math.round(r?.width ?? 0),
+    height: Math.round(r?.height ?? 0),
+  };
 }
