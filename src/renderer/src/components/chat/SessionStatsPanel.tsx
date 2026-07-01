@@ -16,7 +16,7 @@ import { CompactDialog } from "@/components/chat/CompactDialog";
 import { Button, IconButton, Panel, Spinner } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { formatNumber } from "@/lib/format";
-import { useActiveSession, useChatStore } from "@/store/chat";
+import { useChatStore, useSession } from "@/store/chat";
 
 /** Derived numeric view of the active session's stats, read permissively. */
 interface StatsView {
@@ -40,10 +40,10 @@ function readNumber(
   return undefined;
 }
 
-/** Read the active session's stats slice into a stable derived view. */
-function useStatsView(): StatsView {
-  const stats = useActiveSession((s) => s?.stats);
-  const sliceContext = useActiveSession((s) => s?.contextUsage);
+/** Read one session's stats slice into a stable derived view (AGE-801). */
+function useStatsView(sessionId: string): StatsView {
+  const stats = useSession(sessionId, (s) => s?.stats);
+  const sliceContext = useSession(sessionId, (s) => s?.contextUsage);
   return {
     contextUsage: stats?.contextUsage ?? sliceContext,
     totalTokens: readNumber(stats, ["tokens", "totalTokens", "total_tokens"]),
@@ -132,8 +132,8 @@ function ContextMeter({ usage }: { usage: ContextUsage }) {
  * token/cost when known. Reads the active session, so it renders nothing until
  * any usage is available.
  */
-export function ContextMeterChip() {
-  const view = useStatsView();
+export function ContextMeterChip({ sessionId }: { sessionId: string }) {
+  const view = useStatsView(sessionId);
   const usage = view.contextUsage;
   const tokens = view.totalTokens ?? usage?.tokens;
   const cost = view.cost;
@@ -179,11 +179,11 @@ export function SessionStatsPanel({
   headerLeading?: ReactNode;
   dense?: boolean;
 }) {
-  const view = useStatsView();
-  const messageCount = useActiveSession((s) => s?.messages.length ?? 0);
-  const queuedCount = useActiveSession((s) => s?.queuedCount ?? 0);
-  const isCompacting = useActiveSession((s) => s?.isCompacting ?? false);
-  const compacting = useActiveSession((s) => s?.compacting ?? false);
+  const view = useStatsView(sessionId);
+  const messageCount = useSession(sessionId, (s) => s?.messages.length ?? 0);
+  const queuedCount = useSession(sessionId, (s) => s?.queuedCount ?? 0);
+  const isCompacting = useSession(sessionId, (s) => s?.isCompacting ?? false);
+  const compacting = useSession(sessionId, (s) => s?.compacting ?? false);
   const refreshStats = useChatStore((s) => s.refreshStats);
   const [refreshing, setRefreshing] = useState(false);
   const [showCompact, setShowCompact] = useState(false);

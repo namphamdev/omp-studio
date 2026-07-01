@@ -15,7 +15,7 @@ import { useState } from "react";
 import { IconButton } from "@/components/ui";
 import { cn } from "@/lib/cn";
 import { NO_RULES, useApprovalStore } from "@/store/approvals";
-import { useActiveSession, useChatStore } from "@/store/chat";
+import { useSession } from "@/store/chat";
 
 const MODE_LABEL: Record<ApprovalMode, string> = {
   "always-ask": "Always ask",
@@ -29,24 +29,19 @@ const MODE_TONE: Record<ApprovalMode, string> = {
   yolo: "border-danger/40 bg-danger/10 text-danger",
 };
 
-export function ApprovalModeControl() {
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const status = useActiveSession((s) => s?.status ?? "idle");
-  const policy = useApprovalStore((s) =>
-    activeSessionId ? s.policies[activeSessionId] : undefined,
-  );
-  const rules = useApprovalStore((s) =>
-    activeSessionId
-      ? (s.rulesBySession[activeSessionId] ?? NO_RULES)
-      : NO_RULES,
+export function ApprovalModeControl({ sessionId }: { sessionId: string }) {
+  const registered = useSession(sessionId, (s) => Boolean(s));
+  const status = useSession(sessionId, (s) => s?.status ?? "idle");
+  const policy = useApprovalStore((s) => s.policies[sessionId]);
+  const rules = useApprovalStore(
+    (s) => s.rulesBySession[sessionId] ?? NO_RULES,
   );
   const revokeRule = useApprovalStore((s) => s.revokeRule);
   const [open, setOpen] = useState(false);
   const mode: ApprovalMode = policy?.mode ?? "always-ask";
-
-  // No live session → nothing to show. Mirrors the prior fixed-chip gate, which
-  // only rendered while a session was active and not exited.
-  if (!activeSessionId || status === "exited") return null;
+  // Unregistered or exited session → nothing to show. Mirrors the prior
+  // fixed-chip gate, which only rendered while a session was live.
+  if (!registered || status === "exited") return null;
 
   return (
     <div className="relative">
@@ -114,7 +109,7 @@ export function ApprovalModeControl() {
                       <IconButton
                         label={`Revoke ${rule.label}`}
                         className="h-6 w-6"
-                        onClick={() => revokeRule(activeSessionId, rule.key)}
+                        onClick={() => revokeRule(sessionId, rule.key)}
                       >
                         <X className="h-3.5 w-3.5" />
                       </IconButton>

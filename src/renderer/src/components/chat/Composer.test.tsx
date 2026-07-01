@@ -7,7 +7,8 @@
 // The model chip and slash palette are stubbed so this exercises only the
 // placeholder wiring.
 
-import { render, screen } from "@testing-library/react";
+import { render, screen, within } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
 import { useAppStore } from "@/store/app";
 import { useChatStore } from "@/store/chat";
 import { useSettingsStore } from "@/store/settings";
@@ -68,7 +69,7 @@ it("names the active workspace in the placeholder, preferring its saved label", 
   });
   activate("/home/me/acme");
 
-  render(<Composer />);
+  render(<Composer sessionId={SESSION_ID} />);
 
   expect(placeholder()).toBe("Message Acme…");
 });
@@ -76,7 +77,7 @@ it("names the active workspace in the placeholder, preferring its saved label", 
 it("falls back to the selected project's basename when no workspace is saved", () => {
   activate("/home/me/widget-shop");
 
-  render(<Composer />);
+  render(<Composer sessionId={SESSION_ID} />);
 
   expect(placeholder()).toBe("Message widget-shop…");
 });
@@ -87,13 +88,74 @@ it("names the active workspace, not the session cwd, when they diverge", () => {
   // (selectedProject), not the session cwd.
   activate("/Users/dylanmccavitt", "/Users/dylanmccavitt/projects/port-omp");
 
-  render(<Composer />);
+  render(<Composer sessionId={SESSION_ID} />);
 
   expect(placeholder()).toBe("Message port-omp…");
 });
 
-it("reads 'No active session' when there is no active session", () => {
-  render(<Composer />);
+it("reads 'No active session' when the pane's session is not registered", () => {
+  // AGE-801: the composer is pane-scoped. A pane whose session id is not in
+  // openSessions (still opening, or gone) renders disabled.
+  render(<Composer sessionId="ghost-session" />);
 
   expect(placeholder()).toBe("No active session");
+});
+
+// ---------------------------------------------------------------------------
+// AGE-801: two pane-scoped composers target DIFFERENT sessions — a submit in
+// one pane routes to its own session id and never leaks into the other.
+// ---------------------------------------------------------------------------
+
+it("two composers with different session ids send to their own sessions", async () => {
+  const user = userEvent.setup();
+  const prompt = vi.fn().mockResolvedValue(undefined);
+  Object.assign(window.omp, {
+    chat: { ...window.omp.chat, prompt },
+  });
+  useChatStore.setState({
+    activeSessionId: "session-a",
+    openSessions: {
+      "session-a": {
+        sessionId: "session-a",
+        status: "idle",
+        cwd: "/p/a",
+        model: null,
+        availableCommands: [],
+        messages: [],
+      },
+      "session-b": {
+        sessionId: "session-b",
+        status: "idle",
+        cwd: "/p/b",
+        model: null,
+        availableCommands: [],
+        messages: [],
+      },
+    } as never,
+  });
+
+  render(
+    <div>
+      <div data-testid="pane-a">
+        <Composer sessionId="session-a" />
+      </div>
+      <div data-testid="pane-b">
+        <Composer sessionId="session-b" />
+      </div>
+    </div>,
+  );
+
+  const paneB = within(screen.getByTestId("pane-b"));
+  await user.type(paneB.getByLabelText("Message"), "to bee");
+  await user.click(paneB.getByRole("button", { name: "Send" }));
+  expect(prompt).toHaveBeenCalledWith("session-b", "to bee", undefined);
+
+  const paneA = within(screen.getByTestId("pane-a"));
+  await user.type(paneA.getByLabelText("Message"), "to ay");
+  await user.click(paneA.getByRole("button", { name: "Send" }));
+  expect(prompt).toHaveBeenLastCalledWith("session-a", "to ay", undefined);
+
+  // Each composer's draft stayed local: pane A's textarea never saw pane B's
+  // text (independent component state, not a shared global draft).
+  expect(prompt).toHaveBeenCalledTimes(2);
 });

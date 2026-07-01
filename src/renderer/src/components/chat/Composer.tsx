@@ -15,23 +15,24 @@ import { SlashCommandPalette } from "@/components/chat/SlashCommandPalette";
 import { Button } from "@/components/ui";
 import { projectLabel, workspaceColorForCwd } from "@/lib/workspaces";
 import { useAppStore } from "@/store/app";
-import { useActiveSession, useChatStore } from "@/store/chat";
+import { useChatStore, useSession } from "@/store/chat";
 import { sessionStatus } from "@/store/session-reducer";
 import { useSettingsStore } from "@/store/settings";
 
 /** Stable empty ref so the no-session selector keeps a steady identity. */
 const NO_COMMANDS: AvailableCommand[] = [];
 
-export function Composer() {
-  const sessionId = useActiveSession((s) => s?.sessionId ?? null);
-  const status = useActiveSession((s) => s?.status ?? "idle");
-  const model = useActiveSession((s) => s?.model ?? null);
+export function Composer({ sessionId }: { sessionId: string }) {
+  const open = useSession(sessionId, (s) => Boolean(s));
+  const status = useSession(sessionId, (s) => s?.status ?? "idle");
+  const model = useSession(sessionId, (s) => s?.model ?? null);
   const selectedProject = useAppStore((s) => s.selectedProject);
   const send = useChatStore((s) => s.send);
   const steer = useChatStore((s) => s.steer);
   const abort = useChatStore((s) => s.abort);
   const setModel = useChatStore((s) => s.setModel);
-  const availableCommands = useActiveSession(
+  const availableCommands = useSession(
+    sessionId,
     (s) => s?.availableCommands ?? NO_COMMANDS,
   );
   const workspaces = useSettingsStore((s) => s.settings?.workspaces);
@@ -41,7 +42,9 @@ export function Composer() {
   );
 
   const streaming = status === "streaming";
-  const disabled = !sessionId;
+  // Disabled until this pane's session is registered in the store — a pane
+  // whose session is still opening (or gone) must not accept input.
+  const disabled = !open;
 
   // Name the active workspace for the placeholder: read the same chrome source
   // as the window title (app.selectedProject), preferring the saved workspace's
@@ -70,7 +73,9 @@ export function Composer() {
                 : `Message ${workspaceName ?? "workspace"}…`
           }
           onSubmit={(text, images) =>
-            streaming ? steer(text, images) : send(text, images)
+            streaming
+              ? steer(text, images, sessionId)
+              : send(text, images, sessionId)
           }
           renderOverlay={(ctx) => (
             <SlashCommandPalette {...ctx} commands={availableCommands} />
@@ -79,7 +84,9 @@ export function Composer() {
             disabled ? null : (
               <ModelControl
                 model={model}
-                onChange={setModel}
+                onChange={(provider, modelId) =>
+                  setModel(provider, modelId, sessionId)
+                }
                 color={color}
                 status={sessionStatus({ live: true, status })}
               />
@@ -94,7 +101,7 @@ export function Composer() {
                 </Button>
                 <Button
                   variant="danger"
-                  onClick={() => void abort()}
+                  onClick={() => void abort(sessionId)}
                   disabled={disabled}
                 >
                   <Square className="h-4 w-4" />

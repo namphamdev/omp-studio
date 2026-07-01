@@ -12,7 +12,7 @@ import type {
 import { Loader } from "lucide-react";
 import { Fragment, useEffect, useRef } from "react";
 import { workspaceColorForCwd } from "@/lib/workspaces";
-import { useActiveSession } from "@/store/chat";
+import { useSession } from "@/store/chat";
 import type { SystemCard } from "@/store/session-reducer";
 import { useSettingsStore } from "@/store/settings";
 import { MessageBubble } from "./MessageBubble";
@@ -21,14 +21,17 @@ import { SystemCardBubble } from "./SystemCardBubble";
 const EMPTY_MESSAGES: OmpMessage[] = [];
 const EMPTY_CARDS: SystemCard[] = [];
 
-export function MessageList() {
-  const messages = useActiveSession((s) => s?.messages ?? EMPTY_MESSAGES);
-  const status = useActiveSession((s) => s?.status ?? "idle");
-  const liveText = useActiveSession((s) => s?.liveText ?? "");
-  const liveThinking = useActiveSession((s) => s?.liveThinking ?? "");
-  const activeTool = useActiveSession((s) => s?.activeTool ?? null);
-  const systemCards = useActiveSession((s) => s?.systemCards ?? EMPTY_CARDS);
-  const cwd = useActiveSession((s) => s?.cwd);
+export function MessageList({ sessionId }: { sessionId: string }) {
+  const messages = useSession(sessionId, (s) => s?.messages ?? EMPTY_MESSAGES);
+  const status = useSession(sessionId, (s) => s?.status ?? "idle");
+  const liveText = useSession(sessionId, (s) => s?.liveText ?? "");
+  const liveThinking = useSession(sessionId, (s) => s?.liveThinking ?? "");
+  const activeTool = useSession(sessionId, (s) => s?.activeTool ?? null);
+  const systemCards = useSession(
+    sessionId,
+    (s) => s?.systemCards ?? EMPTY_CARDS,
+  );
+  const cwd = useSession(sessionId, (s) => s?.cwd);
   const workspaces = useSettingsStore((s) => s.settings?.workspaces);
   const workspaceColorKey = workspaceColorForCwd(workspaces, cwd);
 
