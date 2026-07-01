@@ -362,6 +362,11 @@ test("registry.write rejects non-string id/data and oversized payloads without t
   await expect(
     registry.write(session.id, "x".repeat(1_048_577)),
   ).rejects.toThrow(/maximum size/);
+  // The cap is BYTES, not UTF-16 code units: a 3-byte-per-char payload whose
+  // .length is under the cap must still be rejected.
+  await expect(
+    registry.write(session.id, "\u0800".repeat(400_000)),
+  ).rejects.toThrow(/maximum size/);
   expect(ptys[0]?.written).toEqual([]);
 });
 

@@ -197,7 +197,9 @@ export class TerminalRegistry {
       throw new Error("terminal write requires a string id and string data");
     }
     if (data.length === 0) return;
-    if (data.length > MAX_WRITE_BYTES) {
+    // Cap in BYTES (what the pty fd actually receives), not UTF-16 code
+    // units — a non-ASCII payload is up to 3x its .length in UTF-8.
+    if (Buffer.byteLength(data, "utf8") > MAX_WRITE_BYTES) {
       throw new Error("terminal write payload exceeds the maximum size");
     }
     const session = this.sessions.get(id);

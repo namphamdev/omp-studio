@@ -47,22 +47,29 @@ export interface ViewBounds {
   height: number;
 }
 
-// Clamp renderer-supplied view geometry to a maximum box. Non-finite values
-// (NaN/Infinity from a hostile or buggy payload) collapse to 0; fractional
-// values are floored; origins are kept inside the box so a view can never be
-// positioned or sized outside the window content area electron hands us.
-export function clampBounds(bounds: ViewBounds, max: ViewBounds): ViewBounds {
-  const int = (v: number, lo: number, hi: number): number => {
-    if (!Number.isFinite(v)) return lo;
+// Clamp renderer-supplied view geometry to a maximum box. A malformed
+// container (null, a non-object — anything IPC can smuggle past the type)
+// collapses to a zero rect instead of throwing mid-create and leaking a live
+// view slot. Non-finite values (NaN/Infinity from a hostile or buggy payload)
+// collapse to 0; fractional values are floored; origins are kept inside the
+// box so a view can never be positioned or sized outside the window content
+// area electron hands us.
+export function clampBounds(bounds: unknown, max: ViewBounds): ViewBounds {
+  const b =
+    typeof bounds === "object" && bounds !== null
+      ? (bounds as Partial<Record<keyof ViewBounds, unknown>>)
+      : {};
+  const int = (v: unknown, lo: number, hi: number): number => {
+    if (typeof v !== "number" || !Number.isFinite(v)) return lo;
     return Math.min(hi, Math.max(lo, Math.floor(v)));
   };
-  const x = int(bounds.x, 0, Math.max(0, max.width));
-  const y = int(bounds.y, 0, Math.max(0, max.height));
+  const x = int(b.x, 0, Math.max(0, max.width));
+  const y = int(b.y, 0, Math.max(0, max.height));
   return {
     x,
     y,
-    width: int(bounds.width, 0, Math.max(0, max.width - x)),
-    height: int(bounds.height, 0, Math.max(0, max.height - y)),
+    width: int(b.width, 0, Math.max(0, max.width - x)),
+    height: int(b.height, 0, Math.max(0, max.height - y)),
   };
 }
 
@@ -331,7 +338,7 @@ export class BrowserViewManager {
   // content box (or a bounded fallback when no window is attached), so a
   // hostile bounds payload can never park a view outside the window or size
   // it absurdly.
-  private clampToWindow(bounds: ViewBounds): ViewBounds {
+  private clampToWindow(bounds: unknown): ViewBounds {
     const content = this.getWindow()?.getContentBounds();
     return clampBounds(bounds, {
       x: 0,

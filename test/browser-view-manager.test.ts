@@ -550,6 +550,27 @@ test("clampBounds floors fractional values, zeroes non-finite ones, and clamps t
   );
 });
 
+test("clampBounds collapses malformed containers to a zero rect instead of throwing", () => {
+  const box = { x: 0, y: 0, width: 1000, height: 700 };
+  const zero = { x: 0, y: 0, width: 0, height: 0 };
+  expect(clampBounds(null, box)).toEqual(zero);
+  expect(clampBounds(undefined, box)).toEqual(zero);
+  expect(clampBounds("wat", box)).toEqual(zero);
+  expect(clampBounds({ x: "5", width: [] }, box)).toEqual(zero);
+});
+
+test("create with a malformed bounds container still creates (zero rect), never leaks a view slot", () => {
+  const { manager, created } = harness();
+  const state = manager.create({
+    url: "https://example.com",
+    bounds: null as unknown as ViewBounds,
+  });
+  expect(created).toHaveLength(1);
+  expect(created[0]?.bounds).toEqual({ x: 0, y: 0, width: 0, height: 0 });
+  // The record is live and addressable — not a leaked orphan.
+  manager.destroy(state.id);
+});
+
 test("create and setBounds clamp hostile geometry before the view sees it", () => {
   const { manager, created } = harness();
   const { id } = manager.create({
