@@ -147,8 +147,17 @@ function defaultCreateView(opts: CreateViewOptions): ManagedView {
   });
 }
 
+// Last-line enforcement of the shared external-open policy on the DEFAULT
+// (electron shell) opener: even if a caller's gate is bypassed or a new call
+// site forgets to check, only the validated, normalized href can reach the OS.
+// Injected test openers replace this whole function, callers gate explicitly.
 function defaultOpenExternal(url: string): void {
-  void electron().shell.openExternal(url);
+  const verdict = validateExternalUrl(url);
+  if (!verdict.ok) {
+    log.warn("blocked external open", { reason: verdict.reason });
+    return;
+  }
+  void electron().shell.openExternal(verdict.url);
 }
 
 function blockedMessage(allowlist?: readonly string[]): string {

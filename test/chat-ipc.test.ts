@@ -628,3 +628,26 @@ test("chat:resume accepts a descriptor without a sessionFile (omp-id resume)", a
   expect(resumeCalls[0]?.ompSessionId).toBe("omp-abc123");
   expect(resumeCalls[0]?.sessionFile).toBeUndefined();
 });
+
+test("chat:resume rejects a path-shaped ompSessionId (no --resume smuggling through the id arm)", async () => {
+  const { ipcMain, invoke } = makeIpcMain();
+  const { registry, resumeCalls } = makeRegistry();
+  const { win } = makeWindow();
+  registerChatIpc(ipcMain, registry, () => win);
+
+  for (const ompSessionId of [
+    "/etc/passwd",
+    "../../../etc/passwd",
+    "..\\..\\secrets",
+    ".hidden",
+    "",
+  ]) {
+    await expect(
+      invoke(
+        CH.chatResume,
+        resumeDescriptor({ ompSessionId }),
+      ) as Promise<unknown>,
+    ).rejects.toThrow(/not a valid omp session id/);
+  }
+  expect(resumeCalls).toHaveLength(0);
+});

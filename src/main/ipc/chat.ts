@@ -201,8 +201,17 @@ function sanitizeResumeDescriptor(
   if (raw.model !== undefined) descriptor.model = raw.model;
   if (raw.thinkingLevel !== undefined)
     descriptor.thinkingLevel = raw.thinkingLevel;
-  if (raw.ompSessionId !== undefined)
+  if (raw.ompSessionId !== undefined) {
+    // `omp --resume` accepts a transcript PATH or a session id. The path arm
+    // is contained below, so the id arm must never be path-shaped — otherwise
+    // a hostile descriptor could smuggle an arbitrary file to the child
+    // through the id field. omp ids are opaque tokens; allow only a strict
+    // token alphabet (no separators, no dots-only forms).
+    if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/.test(raw.ompSessionId)) {
+      throw new Error("ompSessionId is not a valid omp session id");
+    }
     descriptor.ompSessionId = raw.ompSessionId;
+  }
   if (raw.sessionFile !== undefined) {
     descriptor.sessionFile = containedSessionFile(raw.sessionFile);
   }
