@@ -19,6 +19,7 @@ beforeEach(() => {
     true,
   );
   useShellStore.setState({ sidebarMode: "chats" });
+  useShellStore.getState().setSidebarToggleHandler(null);
   // The Files tree lists the workspace root on mount; stub the FS bridge so the
   // sidebar renders without a real main process.
   Object.assign(window.omp, { files: { readDir: vi.fn(async () => []) } });
@@ -51,6 +52,17 @@ it("invokes the store's newChat when New chat is clicked", async () => {
   await user.click(screen.getByRole("button", { name: "New chat" }));
 
   expect(newChat).toHaveBeenCalledTimes(1);
+});
+
+it("shows a collapse sidebar action in the tool row", async () => {
+  const user = userEvent.setup();
+  const toggleSidebar = vi.fn();
+  useShellStore.getState().setSidebarToggleHandler(toggleSidebar);
+  render(<Sidebar />);
+
+  await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+
+  expect(toggleSidebar).toHaveBeenCalledTimes(1);
 });
 
 it("selects a session when its row is clicked", async () => {

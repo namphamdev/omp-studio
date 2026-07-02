@@ -331,6 +331,9 @@ function coerceLayout(value: unknown): LayoutSettings | undefined {
   ) {
     out.sidebarWidthPct = value.sidebarWidthPct;
   }
+  if (typeof value.sidebarCollapsed === "boolean") {
+    out.sidebarCollapsed = value.sidebarCollapsed;
+  }
   if (
     typeof value.chatRailWidthPct === "number" &&
     Number.isFinite(value.chatRailWidthPct)

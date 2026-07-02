@@ -322,6 +322,7 @@ test("round-trips a patch of each new V2 namespace (they coexist, not clobber)",
   await updateSettings({
     layout: {
       sidebarWidthPct: 28,
+      sidebarCollapsed: true,
       chatRailCollapsed: true,
       navOrder: ["dash", "chat"],
       chatRailPanels: [{ id: "subagents", visible: false }],
@@ -367,6 +368,7 @@ test("round-trips a patch of each new V2 namespace (they coexist, not clobber)",
   ]);
   expect(loaded.layout).toEqual({
     sidebarWidthPct: 28,
+    sidebarCollapsed: true,
     chatRailCollapsed: true,
     navOrder: ["dash", "chat"],
     chatRailPanels: [{ id: "subagents", visible: false }],

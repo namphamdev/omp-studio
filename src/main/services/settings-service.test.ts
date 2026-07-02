@@ -36,3 +36,18 @@ it("preserves legacy rightPanelWidthPct while accepting per-route pixel widths",
     rightPanelWidthsPx: { terminal: 760 },
   });
 });
+
+it("coerces the persisted sidebar collapsed flag", () => {
+  const settings = migrate({
+    version: 2,
+    layout: {
+      sidebarWidthPct: 24,
+      sidebarCollapsed: true,
+    },
+  });
+
+  expect(settings.layout).toMatchObject({
+    sidebarWidthPct: 24,
+    sidebarCollapsed: true,
+  });
+});
