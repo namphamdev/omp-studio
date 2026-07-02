@@ -65,7 +65,7 @@ describe("ApprovalModeControl — header chip (AGE-686)", () => {
       policy: { mode: "yolo", autoApprove: true },
       rules: [rule("k1", "write a.txt")],
     });
-    render(<ApprovalModeControl />);
+    render(<ApprovalModeControl sessionId="s1" />);
     expect(
       screen.getByRole("button", {
         name: /Approval mode: Yolo — all tools\. 1 always-allow rule/,
@@ -75,7 +75,7 @@ describe("ApprovalModeControl — header chip (AGE-686)", () => {
 
   it("falls back to Always ask when the session has no captured policy", () => {
     seed();
-    render(<ApprovalModeControl />);
+    render(<ApprovalModeControl sessionId="s1" />);
     expect(
       screen.getByRole("button", { name: /Approval mode: Always ask/ }),
     ).toBeInTheDocument();
@@ -87,7 +87,7 @@ describe("ApprovalModeControl — header chip (AGE-686)", () => {
       policy: { mode: "write", autoApprove: false },
       rules: [rule("k1", "write a.txt"), rule("k2", "read b.txt")],
     });
-    render(<ApprovalModeControl />);
+    render(<ApprovalModeControl sessionId="s1" />);
 
     // Closed: the rules panel is not mounted yet.
     expect(screen.queryByText("Always-allowed this session")).toBeNull();
@@ -116,7 +116,7 @@ describe("ApprovalModeControl — header chip (AGE-686)", () => {
   it("shows the empty hint when the session has no rules, and closes on click-away", async () => {
     const user = userEvent.setup();
     seed({ policy: { mode: "always-ask", autoApprove: false } });
-    render(<ApprovalModeControl />);
+    render(<ApprovalModeControl sessionId="s1" />);
 
     await user.click(screen.getByRole("button", { name: /Approval mode/ }));
     const panel = screen.getByText("Always-allowed this session").parentElement;
@@ -130,14 +130,16 @@ describe("ApprovalModeControl — header chip (AGE-686)", () => {
     expect(screen.queryByText("Always-allowed this session")).toBeNull();
   });
 
-  it("renders nothing without an active session", () => {
-    const { container } = render(<ApprovalModeControl />);
+  it("renders nothing when the pane's session is not registered", () => {
+    // No seed: "s1" is not in openSessions — the pane's session is gone or
+    // still opening, so the chip must not render (AGE-801 pane scoping).
+    const { container } = render(<ApprovalModeControl sessionId="s1" />);
     expect(container).toBeEmptyDOMElement();
   });
 
   it("renders nothing once the session has exited", () => {
     seed({ status: "exited", policy: { mode: "yolo", autoApprove: true } });
-    const { container } = render(<ApprovalModeControl />);
+    const { container } = render(<ApprovalModeControl sessionId="s1" />);
     expect(container).toBeEmptyDOMElement();
   });
 });

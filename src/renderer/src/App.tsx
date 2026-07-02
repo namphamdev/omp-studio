@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { AppErrorBoundary } from "@/components/AppErrorBoundary";
+import { UiRequestLayer } from "@/components/chat/UiRequestLayer";
 import { Layout } from "@/components/Layout";
 import { NavPalette } from "@/components/nav/NavPalette";
 import { GlobalSearch } from "@/components/search/GlobalSearch";
@@ -9,7 +9,6 @@ import { useTheme } from "@/lib/useTheme";
 import { useAppStore } from "@/store/app";
 import { useChatStore } from "@/store/chat";
 import { useSettingsStore } from "@/store/settings";
-import ChatWorkspace from "@/views/Chat";
 
 // The center surface is `CenterTabs`: an always-present Chat tab (the active
 // session's transcript, else a minimal empty state) plus one tab per open file
@@ -48,17 +47,16 @@ export default function App() {
   }, [loadSettings, ensureSubscribed, loadOpenSessions]);
   return (
     <Layout>
-      {/* The center is the chat/files primary surface. A crash in the chat
-          surface shows a fallback, not a blank window; the shell (sidebar /
-          header / rail), the file tabs, and search stay alive. resetKey tracks
-          the active session so opening another chat clears a crashed transcript. */}
-      <CenterTabs
-        chat={
-          <AppErrorBoundary resetKey={activeSessionId}>
-            <ChatWorkspace />
-          </AppErrorBoundary>
-        }
-      />
+      {/* The center is the pane host (AGE-801): the pane model's split tree of
+          session-scoped chat panes + file panes. Each pane carries its own
+          error boundary, so a crash in one pane never blanks its siblings or
+          the shell (sidebar / header / rail). */}
+      <CenterTabs />
+      {/* ONE UI-request layer per window, for the ACTIVE session: modal UI
+          requests are window-exclusive (focused dialogs), so the layer is app
+          chrome, not pane content. Mounted with a null id too, so approval
+          pruning and the timeout sweeper keep running with no session. */}
+      <UiRequestLayer sessionId={activeSessionId} />
       <NavPalette />
       <GlobalSearch />
     </Layout>

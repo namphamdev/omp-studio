@@ -29,7 +29,7 @@ import {
 import { formatNumber } from "@/lib/format";
 import { useAsync } from "@/lib/useAsync";
 import { useAppStore } from "@/store/app";
-import { useActiveSession, useChatStore } from "@/store/chat";
+import { useChatStore, useSession } from "@/store/chat";
 import { SOURCE_VARIANT, STATUS_VARIANT, subagentLabel } from "./SubagentTree";
 
 const EMPTY_FRAMES: RpcFrame[] = [];
@@ -179,9 +179,10 @@ export function SubagentInspector({
   const { status, sessionFile } = subagent;
   const live = status === "running" || status === "pending";
   const progress =
-    useActiveSession((s) => s?.subagentEvents[id]?.progress) ??
+    useSession(sessionId, (s) => s?.subagentEvents[id]?.progress) ??
     subagent.progress;
-  const events = useActiveSession(
+  const events = useSession(
+    sessionId,
     (s) => s?.subagentEvents[id]?.events ?? EMPTY_FRAMES,
   );
   const focusSession = useAppStore((s) => s.focusSession);

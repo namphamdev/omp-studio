@@ -96,10 +96,12 @@ interface ChatState {
   /** Cleanup for the single global bridge subscription (null until wired). */
   _unsub: (() => void) | null;
   /**
-   * The subagent whose live transcript is "popped into" the center column, or
-   * null when the main chat transcript is shown. Cleared on session switch.
+   * The subagent whose live transcript is "popped into" the center column,
+   * SCOPED to its parent session (AGE-801: only the pane rendering that
+   * session shows the inspector), or null when every pane shows its main
+   * transcript. Cleared on session switch.
    */
-  inspectedSubagentId: string | null;
+  inspectedSubagent: { sessionId: string; subagentId: string } | null;
   /**
    * Live drill-in transcript buffer for the open SubagentInspector, or null
    * when none is open. Ephemeral; never persisted.
@@ -115,8 +117,10 @@ interface ChatActions {
 
   /** Select which session the chat pane shows (without changing route). */
   setActiveSession(id: string | null): void;
-  /** Pop into (id) / out of (null) a subagent's full-view transcript. */
-  setInspectedSubagent(id: string | null): void;
+  /** Pop into / out of a subagent's full-view transcript (session-scoped). */
+  setInspectedSubagent(
+    inspected: { sessionId: string; subagentId: string } | null,
+  ): void;
   /** Show an existing session in the chat route. */
   openChat(id: string): void;
   /** Start a brand-new chat in the active workspace using the default model. */
@@ -157,17 +161,31 @@ interface ChatActions {
   start(opts: ChatCreateOptions): Promise<boolean>;
 
   /**
-   * Prompt the active session, optionally with image attachments (follows up
-   * while it streams). Resolves `true` once the prompt is accepted by the
-   * bridge, `false` if there was nothing to send or the IPC call failed.
+   * Prompt a session, optionally with image attachments (follows up while it
+   * streams). `sessionId` defaults to the active session — pane-scoped
+   * composers pass their own id (AGE-801). Resolves `true` once the prompt is
+   * accepted by the bridge, `false` if there was nothing to send or the IPC
+   * call failed.
    */
-  send(text: string, images?: ImageContent[]): Promise<boolean>;
-  /** Steer the active session mid-turn, optionally with image attachments. */
-  steer(text: string, images?: ImageContent[]): Promise<boolean>;
-  /** Abort the active session's current turn. */
-  abort(): Promise<void>;
-  setModel(provider: string, modelId: string): Promise<void>;
-  setThinking(level: ThinkingLevel): Promise<void>;
+  send(
+    text: string,
+    images?: ImageContent[],
+    sessionId?: string,
+  ): Promise<boolean>;
+  /** Steer a session mid-turn, optionally with image attachments. */
+  steer(
+    text: string,
+    images?: ImageContent[],
+    sessionId?: string,
+  ): Promise<boolean>;
+  /** Abort a session's current turn (default: the active session). */
+  abort(sessionId?: string): Promise<void>;
+  setModel(
+    provider: string,
+    modelId: string,
+    sessionId?: string,
+  ): Promise<void>;
+  setThinking(level: ThinkingLevel, sessionId?: string): Promise<void>;
   /** Answer an extension UI request and dequeue it from its session. */
   respondUi(payload: ChatUiRespondPayload): Promise<void>;
   /**
@@ -259,7 +277,7 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   createError: undefined,
   _unsub: null,
   _subagentInspector: null,
-  inspectedSubagentId: null,
+  inspectedSubagent: null,
 
   ensureSubscribed() {
     if (get()._unsub) return;
@@ -286,15 +304,15 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
   },
 
   setActiveSession(id) {
-    set({ activeSessionId: id, inspectedSubagentId: null });
+    set({ activeSessionId: id, inspectedSubagent: null });
   },
 
-  setInspectedSubagent(id) {
-    set({ inspectedSubagentId: id });
+  setInspectedSubagent(inspected) {
+    set({ inspectedSubagent: inspected });
   },
 
   openChat(id) {
-    set({ activeSessionId: id, inspectedSubagentId: null });
+    set({ activeSessionId: id, inspectedSubagent: null });
     useAppStore.getState().setRoute("chat");
   },
 
@@ -569,8 +587,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     }
   },
 
-  async send(text, images) {
-    const id = get().activeSessionId;
+  async send(text, images, sessionId) {
+    const id = sessionId ?? get().activeSessionId;
     const hasImages = Boolean(images && images.length > 0);
     if (!id || (text.trim() === "" && !hasImages)) return false;
     get()._patch(id, (s) =>
@@ -595,8 +613,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     }
   },
 
-  async steer(text, images) {
-    const id = get().activeSessionId;
+  async steer(text, images, sessionId) {
+    const id = sessionId ?? get().activeSessionId;
     const hasImages = Boolean(images && images.length > 0);
     if (!id || (text.trim() === "" && !hasImages)) return false;
     get()._patch(id, (s) =>
@@ -620,8 +638,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     }
   },
 
-  async abort() {
-    const id = get().activeSessionId;
+  async abort(sessionId) {
+    const id = sessionId ?? get().activeSessionId;
     if (!id) return;
     try {
       await window.omp.chat.abort(id);
@@ -637,8 +655,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     }));
   },
 
-  async setModel(provider, modelId) {
-    const id = get().activeSessionId;
+  async setModel(provider, modelId, sessionId) {
+    const id = sessionId ?? get().activeSessionId;
     if (!id) return;
     try {
       await window.omp.chat.setModel(id, provider, modelId);
@@ -649,8 +667,8 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
     }
   },
 
-  async setThinking(level) {
-    const id = get().activeSessionId;
+  async setThinking(level, sessionId) {
+    const id = sessionId ?? get().activeSessionId;
     if (!id) return;
     get()._patch(id, (s) => ({ ...s, thinkingLevel: level }));
     try {
@@ -917,11 +935,26 @@ export const useChatStore = create<ChatStore>()((set, get) => ({
 const EMPTY_SESSION: undefined = undefined;
 
 /**
- * Subscribe to a slice of the *active* session. Returns the selector applied to
- * the active `LiveSessionState`, or to `undefined` when there is no active
- * session — so components keep the single-active-view ergonomics they had before
- * the store became multi-session. Always return stable references for the
+ * Subscribe to a slice of ONE session by id (AGE-801). The pane-scoped form:
+ * every chat component inside a pane reads its own session through this hook
+ * with an explicit `sessionId`, so two panes rendering different sessions
+ * never alias each other's state. A null id (pane with no session yet)
+ * selects over `undefined`. Always return stable references for the
  * no-session case (a shared constant) to avoid render loops.
+ */
+export function useSession<T>(
+  sessionId: string | null,
+  selector: (s: LiveSessionState | undefined) => T,
+): T {
+  return useChatStore((store) =>
+    selector(sessionId ? store.openSessions[sessionId] : EMPTY_SESSION),
+  );
+}
+
+/**
+ * Subscribe to a slice of the *active* session. Global, single-session
+ * surfaces (sidebar dock, layout chrome, palettes) keep this form; anything
+ * rendered INSIDE a pane must use `useSession` with the pane's session id.
  */
 export function useActiveSession<T>(
   selector: (s: LiveSessionState | undefined) => T,

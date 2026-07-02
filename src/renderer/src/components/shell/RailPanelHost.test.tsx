@@ -6,6 +6,7 @@
 
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { usePaneStore } from "@/store/panes";
 import { useSettingsStore } from "@/store/settings";
 import { useShellStore } from "@/store/shell";
 import { RailPanelHost } from "./RailPanelHost";
@@ -74,4 +75,31 @@ it("Escape already consumed by a nested overlay does not collapse", () => {
   window.dispatchEvent(event);
 
   expect(useShellStore.getState().openPanelId).toBe("skills");
+});
+
+// ---------------------------------------------------------------------------
+// AGE-801: the right rail's expandable panel is EXPLICITLY GLOBAL app chrome —
+// one openPanelId per window, however many center panes exist (the pane model
+// never multiplies it; see store/shell.ts ownership note).
+// ---------------------------------------------------------------------------
+
+it("stays a single global panel regardless of how many center panes are open", () => {
+  // Multiple chat panes open in the pane model must not change rail behavior
+  // or multiply panel instances: the rail reads ONLY the shell store.
+  usePaneStore.getState().reset();
+  usePaneStore.getState().openPane({ kind: "chat", sessionId: "a" });
+  usePaneStore.getState().openPane({ kind: "chat", sessionId: "b" });
+
+  render(<RailPanelHost openPanelId="skills" />);
+
+  // Exactly ONE panel instance, labelled once.
+  expect(
+    screen.getAllByRole("complementary", { name: "Skills panel" }),
+  ).toHaveLength(1);
+  expect(screen.getAllByTestId("stub-view")).toHaveLength(1);
+
+  // Collapsing it collapses THE window's rail — one shared openPanelId.
+  useShellStore.getState().closePanel();
+  expect(useShellStore.getState().openPanelId).toBeNull();
+  usePaneStore.getState().reset();
 });

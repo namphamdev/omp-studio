@@ -71,7 +71,7 @@ const APPROVAL_TITLE = "Allow tool: write\nPath: a.txt\nContent: ok";
 describe("UiRequestLayer — approval-select routing", () => {
   it("renders an approval-shaped select with the rich dialog (Deny default, no listbox)", () => {
     seed([uiEvent(selectReq("r1", APPROVAL_TITLE, ["Approve", "Deny"]))]);
-    render(<UiRequestLayer />);
+    render(<UiRequestLayer sessionId="s1" />);
     const dialog = screen.getByRole("dialog");
     // Rich approval affordances, NOT the generic select listbox.
     expect(within(dialog).getByText("Approval required")).toBeInTheDocument();
@@ -84,7 +84,7 @@ describe("UiRequestLayer — approval-select routing", () => {
     const { respondUi } = seed([
       uiEvent(selectReq("r1", APPROVAL_TITLE, ["Approve", "Deny"])),
     ]);
-    render(<UiRequestLayer />);
+    render(<UiRequestLayer sessionId="s1" />);
     await user.click(screen.getByRole("button", { name: "Approve once" }));
     expect(respondUi).toHaveBeenCalledWith({
       sessionId: "s1",
@@ -98,7 +98,7 @@ describe("UiRequestLayer — approval-select routing", () => {
     const { respondUi } = seed([
       uiEvent(selectReq("r1", APPROVAL_TITLE, ["Approve", "Deny"])),
     ]);
-    render(<UiRequestLayer />);
+    render(<UiRequestLayer sessionId="s1" />);
     await user.click(screen.getByRole("button", { name: "Deny" }));
     expect(respondUi).toHaveBeenCalledWith({
       sessionId: "s1",
@@ -112,7 +112,7 @@ describe("UiRequestLayer — approval-select routing", () => {
     const { respondUi } = seed([
       uiEvent(selectReq("r1", "Pick a branch", ["alpha", "beta"])),
     ]);
-    render(<UiRequestLayer />);
+    render(<UiRequestLayer sessionId="s1" />);
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("listbox")).toBeInTheDocument();
     expect(
@@ -131,7 +131,7 @@ describe("UiRequestLayer — approval-select routing", () => {
     // (no `Allow tool:` marker) must NOT be routed to the rich approval dialog,
     // so it can never expose Always-allow nor be allowlisted.
     seed([uiEvent(selectReq("r1", "Approve the merge?", ["Approve", "Deny"]))]);
-    render(<UiRequestLayer />);
+    render(<UiRequestLayer sessionId="s1" />);
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("listbox")).toBeInTheDocument();
     expect(
@@ -147,7 +147,7 @@ describe("UiRequestLayer — approval-select routing", () => {
     const { respondUi } = seed([
       uiEvent(selectReq("r1", APPROVAL_TITLE, ["Approve", "Deny"])),
     ]);
-    render(<UiRequestLayer />);
+    render(<UiRequestLayer sessionId="s1" />);
     await user.click(screen.getByRole("button", { name: "Always allow" }));
     expect(respondUi).toHaveBeenCalledWith({
       sessionId: "s1",
@@ -168,7 +168,7 @@ describe("UiRequestLayer — approval-select routing", () => {
         ],
       },
     );
-    render(<UiRequestLayer />);
+    render(<UiRequestLayer sessionId="s1" />);
     // Suppressed: it resolves on the wire without ever showing a modal.
     await waitFor(() =>
       expect(respondUi).toHaveBeenCalledWith({

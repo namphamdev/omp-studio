@@ -23,7 +23,7 @@ import type { ExtensionUiResponse } from "@shared/rpc";
 import { useEffect, useMemo, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 import { NO_RULES, useApprovalStore } from "@/store/approvals";
-import { useActiveSession, useChatStore } from "@/store/chat";
+import { useChatStore, useSession } from "@/store/chat";
 import { ApprovalRequestDialog } from "./ui-request/ApprovalRequestDialog";
 import { EditorRequestDialog } from "./ui-request/EditorRequestDialog";
 import { InputRequestDialog } from "./ui-request/InputRequestDialog";
@@ -48,10 +48,15 @@ const NO_UI: ChatUiRequestEvent[] = [];
 // independently answers the child, so we never write a response on timeout.
 const DEFAULT_UI_REQUEST_TIMEOUT_MS = 300_000;
 
-export function UiRequestLayer() {
-  const activeSessionId = useChatStore((s) => s.activeSessionId);
-  const uiRequests = useActiveSession((s) => s?.uiRequests ?? NO_UI);
-  const status = useActiveSession((s) => s?.status ?? "idle");
+// Session-scoped (AGE-801): App mounts ONE layer for the ACTIVE session (modal
+// UI requests are inherently exclusive — one focused dialog per window), but
+// the component itself is parameterized so it renders any session's queue.
+// Stays mounted with a null id (no active session) so the cross-session
+// approval pruning and timeout sweeper keep running.
+export function UiRequestLayer({ sessionId }: { sessionId: string | null }) {
+  const activeSessionId = sessionId;
+  const uiRequests = useSession(sessionId, (s) => s?.uiRequests ?? NO_UI);
+  const status = useSession(sessionId, (s) => s?.status ?? "idle");
   const respondUi = useChatStore((s) => s.respondUi);
   const dismissUi = useChatStore((s) => s.dismissUiRequest);
 

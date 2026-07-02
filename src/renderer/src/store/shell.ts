@@ -4,6 +4,16 @@
 // rail. Toggling a panel both flips this live state AND persists the choice
 // through the settings store's debounced `setLayout`, so the last-open panel is
 // restored on the next launch (hydrated once at boot by `Layout`).
+//
+// OWNERSHIP (AGE-801, load-bearing for AGE-777 split panes): the right icon
+// rail and its expandable panels are EXPLICITLY GLOBAL — exactly one
+// `openPanelId` per window, regardless of how many center panes exist. Rail
+// destinations (Dashboard, Skills, MCP, Agents, Terminal, Browser, Changes,
+// GitHub, Linear, Settings) are app-level tools; several are backed by
+// main-process singletons (one BrowserViewManager overlay, one terminal
+// registry view), so per-pane rails would alias one backend across panes.
+// Anything that must vary per pane lives INSIDE the pane subtree
+// (store/panes.ts), never here.
 
 import { create } from "zustand";
 import type { Route } from "@/store/app";

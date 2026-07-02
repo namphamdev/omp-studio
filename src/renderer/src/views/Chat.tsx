@@ -15,7 +15,6 @@ import { SessionStatusBadge } from "@/components/chat/SessionList";
 import { ContextMeterChip } from "@/components/chat/SessionStatsPanel";
 import { SubagentInspector } from "@/components/chat/SubagentInspector";
 import { ThinkingControl } from "@/components/chat/ThinkingControl";
-import { UiRequestLayer } from "@/components/chat/UiRequestLayer";
 import { ApprovalModeControl } from "@/components/chat/ui-request/ApprovalModeControl";
 import {
   ActivityRail,
@@ -25,7 +24,7 @@ import {
 } from "@/components/transcript/ActivityRail";
 import { Button, EmptyState } from "@/components/ui";
 import { workspaceColorForCwd } from "@/lib/workspaces";
-import { useActiveSession, useChatStore } from "@/store/chat";
+import { useChatStore, useSession } from "@/store/chat";
 import type { ActivityRunState } from "@/store/session-reducer";
 import { useSettingsStore } from "@/store/settings";
 
@@ -41,19 +40,22 @@ const NO_MESSAGES: OmpMessage[] = [];
 /** Stable empty tool-run map so the Activity-rail selector keeps a steady ref. */
 const NO_TOOL_RUNS: Record<string, ActivityRunState> = {};
 
-export default function ChatWorkspace() {
+// Pane-scoped chat surface (AGE-801). `sessionId` pins this workspace to one
+// session; when omitted (the default pane) it follows the global active
+// session — exactly the pre-pane behavior. The UiRequestLayer is NOT mounted
+// here: modal UI requests are window-exclusive, so App mounts one layer for
+// the active session.
+export default function ChatWorkspace({ sessionId }: { sessionId?: string }) {
   const activeSessionId = useChatStore((s) => s.activeSessionId);
+  const shownSessionId = sessionId ?? activeSessionId;
   // Cmd/Ctrl+W (close active session) is handled by the global shortcut manager
   // (lib/useShortcuts), wired once in App — no per-view listener here. The
   // session list + New chat action live in the left sidebar (AGE-632), not here.
   return (
     <div className="flex h-full min-h-0 min-w-0 flex-col">
-      {/* Mounted at the workspace root so the active session's pending UI
-          requests survive session switches and render as focused modals. */}
-      <UiRequestLayer />
       <div className="flex min-h-0 min-w-0 flex-1 flex-col">
-        {activeSessionId ? (
-          <ChatSession key={activeSessionId} sessionId={activeSessionId} />
+        {shownSessionId ? (
+          <ChatSession key={shownSessionId} sessionId={shownSessionId} />
         ) : (
           <NoActiveSession />
         )}
@@ -87,23 +89,33 @@ function NoActiveSession() {
 function ChatSession({ sessionId }: { sessionId: string }) {
   const open = useChatStore((s) => Boolean(s.openSessions[sessionId]));
   const openSession = useChatStore((s) => s.openSession);
-  const status = useActiveSession((s) => s?.status ?? "idle");
-  const thinkingLevel = useActiveSession((s) => s?.thinkingLevel ?? "medium");
+  const status = useSession(sessionId, (s) => s?.status ?? "idle");
+  const thinkingLevel = useSession(
+    sessionId,
+    (s) => s?.thinkingLevel ?? "medium",
+  );
   const setThinking = useChatStore((s) => s.setThinking);
-  const error = useActiveSession((s) => s?.error);
-  const uiRequests = useActiveSession((s) => s?.uiRequests ?? NO_UI);
-  const isCompacting = useActiveSession((s) => s?.isCompacting ?? false);
-  const inspectedId = useChatStore((s) => s.inspectedSubagentId);
+  const error = useSession(sessionId, (s) => s?.error);
+  const uiRequests = useSession(sessionId, (s) => s?.uiRequests ?? NO_UI);
+  const isCompacting = useSession(sessionId, (s) => s?.isCompacting ?? false);
+  // Session-scoped inspector (AGE-801): only the pane rendering the session
+  // that requested the drill-in swaps its transcript for the inspector.
+  const inspectedId = useChatStore((s) =>
+    s.inspectedSubagent?.sessionId === sessionId
+      ? s.inspectedSubagent.subagentId
+      : null,
+  );
   const setInspected = useChatStore((s) => s.setInspectedSubagent);
-  const subagents = useActiveSession(
+  const subagents = useSession(
+    sessionId,
     (s) => s?.subagents ?? NO_SUBAGENTS,
   ) as unknown as SubagentSnapshot[];
   const inspected = inspectedId
     ? subagents.find((s) => s.id === inspectedId)
     : undefined;
-  const messages = useActiveSession((s) => s?.messages ?? NO_MESSAGES);
-  const toolRuns = useActiveSession((s) => s?.toolRuns ?? NO_TOOL_RUNS);
-  const cwd = useActiveSession((s) => s?.cwd);
+  const messages = useSession(sessionId, (s) => s?.messages ?? NO_MESSAGES);
+  const toolRuns = useSession(sessionId, (s) => s?.toolRuns ?? NO_TOOL_RUNS);
+  const cwd = useSession(sessionId, (s) => s?.cwd);
   const workspaces = useSettingsStore((s) => s.settings?.workspaces);
   const color = workspaceColorForCwd(workspaces, cwd);
   const [mode, setMode] = useState<TranscriptMode>("focused");
@@ -137,14 +149,17 @@ function ChatSession({ sessionId }: { sessionId: string }) {
   const transcript = (
     <div className="flex h-full min-w-0 flex-col">
       <header className="flex items-center gap-3 border-b border-border-subtle px-4 py-2.5">
-        <ThinkingControl level={thinkingLevel} onChange={setThinking} />
+        <ThinkingControl
+          level={thinkingLevel}
+          onChange={(level) => setThinking(level, sessionId)}
+        />
         <SessionStatusBadge
           status={status}
           uiRequests={uiRequests}
           isCompacting={isCompacting}
         />
-        <ApprovalModeControl />
-        <ContextMeterChip />
+        <ApprovalModeControl sessionId={sessionId} />
+        <ContextMeterChip sessionId={sessionId} />
         <div className="ml-auto">
           <TranscriptModeToggle value={mode} onChange={setMode} />
         </div>
@@ -156,8 +171,8 @@ function ChatSession({ sessionId }: { sessionId: string }) {
       )}
       <div className="flex min-h-0 flex-1">
         <div className="flex min-w-0 flex-1 flex-col">
-          <MessageList />
-          <Composer />
+          <MessageList sessionId={sessionId} />
+          <Composer sessionId={sessionId} />
         </div>
         {mode === "activity" && <ActivityRail steps={steps} color={color} />}
       </div>
