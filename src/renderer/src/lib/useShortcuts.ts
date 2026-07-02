@@ -8,6 +8,7 @@
 //   Cmd/Ctrl+T or N    new chat
 //   Cmd/Ctrl+W         close the active session (confirm if streaming)
 //   Cmd/Ctrl+1..9      switch to the Nth open session
+//   Cmd/Ctrl+B         toggle the left sidebar
 //   Cmd/Ctrl+K         toggle the navigation palette
 //   Cmd/Ctrl+Shift+F   toggle global search
 //   Cmd/Ctrl+Shift+P   toggle the slash-command palette
@@ -23,6 +24,7 @@
 import { useEffect } from "react";
 import { closeSessionWithConfirm } from "@/components/chat/SessionList";
 import { useChatStore } from "@/store/chat";
+import { useShellStore } from "@/store/shell";
 import { useUiStore } from "@/store/ui";
 
 /**
@@ -86,6 +88,13 @@ export function useShortcuts(): void {
         return;
       }
       if (e.shiftKey) return; // no other Shift chords are bound
+
+      // Cmd/Ctrl+B — collapse/expand the left sidebar.
+      if (e.key === "b" || e.key === "B") {
+        e.preventDefault();
+        useShellStore.getState().toggleSidebar();
+        return;
+      }
 
       switch (e.key) {
         case "t":

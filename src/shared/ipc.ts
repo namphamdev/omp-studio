@@ -281,6 +281,7 @@ export interface Workspace {
 /** Persisted shell layout (feature 5; resizable splits + nav/rail prefs). */
 export interface LayoutSettings {
   sidebarWidthPct?: number;
+  sidebarCollapsed?: boolean;
   chatRailWidthPct?: number;
   chatRailCollapsed?: boolean;
   /** Ordered route ids for the sidebar nav. */

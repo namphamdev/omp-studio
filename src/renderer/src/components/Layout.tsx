@@ -1,5 +1,5 @@
 import type { LayoutSettings } from "@shared/ipc";
-import { Moon, Sun } from "lucide-react";
+import { Moon, PanelLeftOpen, Sun } from "lucide-react";
 import {
   type ReactNode,
   type PointerEvent as ReactPointerEvent,
@@ -10,7 +10,11 @@ import {
   useState,
   useSyncExternalStore,
 } from "react";
-import { PanelGroup, Panel as ResizablePanel } from "react-resizable-panels";
+import {
+  type ImperativePanelHandle,
+  PanelGroup,
+  Panel as ResizablePanel,
+} from "react-resizable-panels";
 import { ResizeHandle } from "@/components/layout/ResizeHandle";
 import { usePersistedPanelLayout } from "@/components/layout/usePersistedPanelLayout";
 import { RailPanelHost } from "@/components/shell/RailPanelHost";
@@ -164,43 +168,112 @@ function ShellSplit({ children }: { children: ReactNode }) {
   // The shell split is always the stable sidebar | main pair. Right-rail panels
   // render as an overlay sheet so opening/closing tools never remounts or
   // resizes the center subtree.
+  const sidebarPanelRef = useRef<ImperativePanelHandle>(null);
+  const setLayout = useSettingsStore((s) => s.setLayout);
+  const setSidebarToggleHandler = useShellStore(
+    (s) => s.setSidebarToggleHandler,
+  );
+  const toggleSidebar = useShellStore((s) => s.toggleSidebar);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(
+    () =>
+      useSettingsStore.getState().settings?.layout?.sidebarCollapsed === true,
+  );
+  const sidebarCollapsedRef = useRef(sidebarCollapsed);
+  const persistedSidebarWidth =
+    useSettingsStore.getState().settings?.layout?.sidebarWidthPct ??
+    DEFAULT_SIDEBAR_WIDTH_PCT;
+  const restoreSidebarWidth = () => {
+    const panel = sidebarPanelRef.current;
+    if (!panel) return;
+    panel.expand();
+    if (panel.getSize() <= 0) panel.resize(persistedSidebarWidth);
+  };
+  const persistSidebarCollapsed = (collapsed: boolean) => {
+    sidebarCollapsedRef.current = collapsed;
+    setSidebarCollapsed(collapsed);
+    setLayout({ sidebarCollapsed: collapsed });
+  };
+  const toggleSidebarCollapsed = () => {
+    const panel = sidebarPanelRef.current;
+    const nextCollapsed = !(
+      panel?.isCollapsed() ?? sidebarCollapsedRef.current
+    );
+    if (nextCollapsed) {
+      panel?.collapse();
+    } else {
+      restoreSidebarWidth();
+    }
+    persistSidebarCollapsed(nextCollapsed);
+  };
+  useEffect(() => {
+    setSidebarToggleHandler(toggleSidebarCollapsed);
+    return () => setSidebarToggleHandler(null);
+  }, [setSidebarToggleHandler, toggleSidebarCollapsed]);
   const { initialLayout, groupRef, onLayout, reset } = usePersistedPanelLayout({
     defaultLayout: [DEFAULT_SIDEBAR_WIDTH_PCT, 100 - DEFAULT_SIDEBAR_WIDTH_PCT],
     read: (l) =>
-      l.sidebarWidthPct != null
-        ? [l.sidebarWidthPct, 100 - l.sidebarWidthPct]
-        : undefined,
-    toPatch: (layout) => ({
-      sidebarWidthPct: roundPct(layout[0] ?? DEFAULT_SIDEBAR_WIDTH_PCT),
-    }),
+      l.sidebarCollapsed
+        ? [0, 100]
+        : l.sidebarWidthPct != null
+          ? [l.sidebarWidthPct, 100 - l.sidebarWidthPct]
+          : undefined,
+    toPatch: (layout) => {
+      const sidebarWidthPct = roundPct(layout[0] ?? DEFAULT_SIDEBAR_WIDTH_PCT);
+      return sidebarWidthPct <= 0
+        ? { sidebarCollapsed: true }
+        : { sidebarWidthPct };
+    },
   });
 
   return (
-    <PanelGroup
-      ref={groupRef}
-      direction="horizontal"
-      onLayout={onLayout}
-      className="flex min-h-0 flex-1"
-    >
-      <ResizablePanel
-        order={1}
-        defaultSize={initialLayout[0]}
-        minSize={SIDEBAR_MIN_PCT}
-        maxSize={SIDEBAR_MAX_PCT}
-        className="flex min-h-0 min-w-0 overflow-hidden"
+    <div className="relative flex min-h-0 flex-1">
+      <PanelGroup
+        ref={groupRef}
+        direction="horizontal"
+        onLayout={onLayout}
+        className="flex min-h-0 flex-1"
       >
-        <Sidebar />
-      </ResizablePanel>
-      <ResizeHandle ariaLabel="Resize sidebar" onReset={reset} />
-      <ResizablePanel
-        order={2}
-        defaultSize={initialLayout[1]}
-        minSize={MAIN_MIN_PCT}
-        className="flex min-h-0 min-w-0"
-      >
-        <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
-      </ResizablePanel>
-    </PanelGroup>
+        <ResizablePanel
+          id="sidebar"
+          ref={sidebarPanelRef}
+          order={1}
+          defaultSize={initialLayout[0]}
+          minSize={SIDEBAR_MIN_PCT}
+          maxSize={SIDEBAR_MAX_PCT}
+          collapsible
+          collapsedSize={0}
+          onCollapse={() => persistSidebarCollapsed(true)}
+          onExpand={() => persistSidebarCollapsed(false)}
+          className="flex min-h-0 min-w-0 overflow-hidden"
+        >
+          {/* Unmount content while collapsed: the zero-width panel clips
+              visually (overflow-hidden) but scrollWidth would still report
+              the content, reading as horizontal overflow. */}
+          {sidebarCollapsed ? null : (
+            <Sidebar onToggleSidebar={toggleSidebar} />
+          )}
+        </ResizablePanel>
+        <ResizeHandle ariaLabel="Resize sidebar" onReset={reset} />
+        <ResizablePanel
+          order={2}
+          defaultSize={initialLayout[1]}
+          minSize={MAIN_MIN_PCT}
+          className="flex min-h-0 min-w-0"
+        >
+          <main className="min-w-0 flex-1 overflow-hidden">{children}</main>
+        </ResizablePanel>
+      </PanelGroup>
+      {sidebarCollapsed && (
+        <button
+          type="button"
+          aria-label="Expand sidebar"
+          onClick={toggleSidebar}
+          className="no-drag absolute left-1 top-2 z-20 flex h-8 w-6 items-center justify-center rounded-md border border-border bg-bg-raised text-ink-muted shadow-sm transition-colors hover:bg-bg-hover hover:text-ink focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-accent/60"
+        >
+          <PanelLeftOpen className="h-4 w-4" />
+        </button>
+      )}
+    </div>
   );
 }
 

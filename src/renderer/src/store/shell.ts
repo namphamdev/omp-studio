@@ -21,6 +21,7 @@ import { useSettingsStore } from "@/store/settings";
 
 /** Which primary surface the left sidebar shows: the chat list or the file tree. */
 export type SidebarMode = "chats" | "files";
+type SidebarToggleHandler = () => void;
 
 interface ShellState {
   /** The open right-rail destination panel, or null when the rail is collapsed. */
@@ -41,6 +42,13 @@ interface ShellState {
   sidebarMode: SidebarMode;
   /** Switch the left sidebar between its Chats and Files surfaces. */
   setSidebarMode: (mode: SidebarMode) => void;
+
+  /** Imperative bridge owned by Layout for collapsing/expanding the left sidebar. */
+  sidebarToggleHandler: SidebarToggleHandler | null;
+  /** Register the live sidebar toggle bridge while the shell split is mounted. */
+  setSidebarToggleHandler: (handler: SidebarToggleHandler | null) => void;
+  /** Toggle the left sidebar through the registered shell split bridge. */
+  toggleSidebar: () => void;
 }
 
 /** Persist the open-panel id through the settings store's debounced writer. */
@@ -75,5 +83,15 @@ export const useShellStore = create<ShellState>((set, get) => ({
 
   setSidebarMode(mode) {
     set({ sidebarMode: mode });
+  },
+
+  sidebarToggleHandler: null,
+
+  setSidebarToggleHandler(handler) {
+    set({ sidebarToggleHandler: handler });
+  },
+
+  toggleSidebar() {
+    get().sidebarToggleHandler?.();
   },
 }));

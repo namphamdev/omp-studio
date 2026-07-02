@@ -4,7 +4,12 @@
 
 import { act, fireEvent, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { forwardRef, type ReactNode, useEffect } from "react";
+import {
+  forwardRef,
+  type ReactNode,
+  useEffect,
+  useImperativeHandle,
+} from "react";
 import { useAppStore } from "@/store/app";
 import { useChatStore } from "@/store/chat";
 import { useSettingsStore } from "@/store/settings";
@@ -12,11 +17,46 @@ import { useShellStore } from "@/store/shell";
 import { useUiStore } from "@/store/ui";
 import { Layout } from "./Layout";
 
+const panelMocks = vi.hoisted(() => ({
+  groupProps: [] as Array<{ onLayout?: (layout: number[]) => void }>,
+  panelProps: [] as Array<Record<string, unknown>>,
+  sidebarHandle: {
+    collapse: vi.fn(),
+    expand: vi.fn(),
+    getSize: vi.fn(() => 18),
+    isCollapsed: vi.fn(() => false),
+    isExpanded: vi.fn(() => true),
+    resize: vi.fn(),
+  },
+  groupHandle: {
+    setLayout: vi.fn(),
+  },
+}));
+
 vi.mock("react-resizable-panels", () => ({
-  PanelGroup: forwardRef<HTMLDivElement, { children: ReactNode }>(
-    ({ children }, ref) => <div ref={ref}>{children}</div>,
-  ),
-  Panel: ({ children }: { children: ReactNode }) => <div>{children}</div>,
+  PanelGroup: forwardRef<
+    typeof panelMocks.groupHandle,
+    { children: ReactNode; onLayout?: (layout: number[]) => void }
+  >(({ children, onLayout }, ref) => {
+    panelMocks.groupProps.push({ onLayout });
+    useImperativeHandle(ref, () => panelMocks.groupHandle);
+    return <div>{children}</div>;
+  }),
+  Panel: forwardRef<
+    typeof panelMocks.sidebarHandle,
+    { children: ReactNode; id?: string; order?: number; defaultSize?: number }
+  >(({ children, ...props }, ref) => {
+    panelMocks.panelProps.push(props);
+    useImperativeHandle(ref, () => panelMocks.sidebarHandle);
+    return (
+      <div
+        data-testid={`panel-${props.order}`}
+        data-default-size={props.defaultSize}
+      >
+        {children}
+      </div>
+    );
+  }),
 }));
 vi.mock("@/components/layout/ResizeHandle", () => ({
   ResizeHandle: () => <div data-testid="resize-handle" />,
@@ -34,7 +74,11 @@ vi.mock("@/components/ui", () => ({
   Toaster: () => null,
 }));
 vi.mock("./Sidebar", () => ({
-  Sidebar: () => <nav aria-label="Sidebar" />,
+  Sidebar: ({ onToggleSidebar }: { onToggleSidebar?: () => void }) => (
+    <button type="button" onClick={onToggleSidebar}>
+      Collapse sidebar
+    </button>
+  ),
 }));
 
 const updateSettings = vi.fn();
@@ -45,6 +89,15 @@ beforeEach(() => {
   updateSettings.mockResolvedValue(undefined);
   prefersDark = false;
   mediaListeners = [];
+  panelMocks.groupProps = [];
+  panelMocks.panelProps = [];
+  panelMocks.sidebarHandle.collapse.mockClear();
+  panelMocks.sidebarHandle.expand.mockClear();
+  panelMocks.sidebarHandle.getSize.mockReturnValue(18);
+  panelMocks.sidebarHandle.isCollapsed.mockReturnValue(false);
+  panelMocks.sidebarHandle.isExpanded.mockReturnValue(true);
+  panelMocks.sidebarHandle.resize.mockClear();
+  panelMocks.groupHandle.setLayout.mockClear();
   window.matchMedia = vi.fn().mockReturnValue({
     get matches() {
       return prefersDark;
@@ -152,6 +205,57 @@ it("renders the selected workspace label with the active session Live Dot status
   expect(
     container.querySelector('[data-status="running"]'),
   ).toBeInTheDocument();
+});
+
+it("collapses the sidebar without overwriting its last expanded width", async () => {
+  const user = userEvent.setup();
+  const setLayout = vi.fn();
+  useSettingsStore.setState({ setLayout });
+  render(<Layout>main</Layout>);
+
+  await user.click(screen.getByRole("button", { name: "Collapse sidebar" }));
+
+  expect(panelMocks.sidebarHandle.collapse).toHaveBeenCalledTimes(1);
+  expect(setLayout).toHaveBeenCalledWith({ sidebarCollapsed: true });
+
+  act(() => panelMocks.groupProps.at(-1)?.onLayout?.([0, 100]));
+  expect(setLayout).not.toHaveBeenCalledWith({ sidebarWidthPct: 0 });
+  expect(setLayout).toHaveBeenLastCalledWith({ sidebarCollapsed: true });
+
+  act(() => panelMocks.groupProps.at(-1)?.onLayout?.([26.66, 73.34]));
+  expect(setLayout).toHaveBeenLastCalledWith({ sidebarWidthPct: 26.7 });
+});
+
+it("restores the persisted sidebar width when expanding from a collapsed boot", async () => {
+  const user = userEvent.setup();
+  const setLayout = vi.fn();
+  panelMocks.sidebarHandle.getSize.mockReturnValue(0);
+  panelMocks.sidebarHandle.isCollapsed.mockReturnValue(true);
+  useSettingsStore.setState((state) => ({
+    setLayout,
+    settings: state.settings
+      ? {
+          ...state.settings,
+          layout: { sidebarWidthPct: 24, sidebarCollapsed: true },
+        }
+      : null,
+  }));
+
+  render(<Layout>main</Layout>);
+
+  expect(
+    screen.getByRole("button", { name: "Expand sidebar" }),
+  ).toBeInTheDocument();
+  expect(screen.getByTestId("panel-1")).toHaveAttribute(
+    "data-default-size",
+    "0",
+  );
+
+  await user.click(screen.getByRole("button", { name: "Expand sidebar" }));
+
+  expect(panelMocks.sidebarHandle.expand).toHaveBeenCalledTimes(1);
+  expect(panelMocks.sidebarHandle.resize).toHaveBeenCalledWith(24);
+  expect(setLayout).toHaveBeenCalledWith({ sidebarCollapsed: false });
 });
 
 it("keeps titlebar controls out of the macOS traffic-light drag region", () => {

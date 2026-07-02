@@ -9,6 +9,7 @@ import { useShortcuts } from "@/lib/useShortcuts";
 import { useAppStore } from "@/store/app";
 import { useChatStore } from "@/store/chat";
 import { createSession } from "@/store/session-reducer";
+import { useShellStore } from "@/store/shell";
 import { useUiStore } from "@/store/ui";
 
 function Harness() {
@@ -39,6 +40,7 @@ beforeEach(() => {
     slashPaletteToggle: 0,
   });
   useAppStore.setState({ route: "dashboard" });
+  useShellStore.getState().setSidebarToggleHandler(null);
 });
 
 describe("useShortcuts", () => {
@@ -56,6 +58,24 @@ describe("useShortcuts", () => {
     expect(useUiStore.getState().navPaletteOpen).toBe(true);
     press("k", { metaKey: true });
     expect(useUiStore.getState().navPaletteOpen).toBe(false);
+  });
+
+  it("Cmd+B toggles the left sidebar unless focus is editable", () => {
+    const toggleSidebar = vi.fn();
+    useShellStore.getState().setSidebarToggleHandler(toggleSidebar);
+    render(
+      <>
+        <Harness />
+        <input data-testid="field" />
+      </>,
+    );
+
+    press("b", { metaKey: true });
+    expect(toggleSidebar).toHaveBeenCalledTimes(1);
+
+    screen.getByTestId("field").focus();
+    press("b", { metaKey: true });
+    expect(toggleSidebar).toHaveBeenCalledTimes(1);
   });
 
   it("Cmd+Shift+F toggles the global search overlay", () => {

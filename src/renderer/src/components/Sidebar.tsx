@@ -11,6 +11,7 @@ import {
   type LucideIcon,
   MessageSquare,
   MessageSquarePlus,
+  PanelLeftClose,
 } from "lucide-react";
 import { ChatPanelDock } from "@/components/chat/ChatPanelDock";
 import { SessionList } from "@/components/chat/SessionList";
@@ -21,11 +22,12 @@ import { cn } from "@/lib/cn";
 import { useChatStore } from "@/store/chat";
 import { type SidebarMode, useShellStore } from "@/store/shell";
 
-export function Sidebar() {
+export function Sidebar({ onToggleSidebar }: { onToggleSidebar?: () => void }) {
   const newChat = useChatStore((s) => s.newChat);
   const mode = useShellStore((s) => s.sidebarMode);
   const setMode = useShellStore((s) => s.setSidebarMode);
-
+  const storeToggleSidebar = useShellStore((s) => s.toggleSidebar);
+  const toggleSidebar = onToggleSidebar ?? storeToggleSidebar;
   return (
     <nav className="no-drag flex h-full w-full min-w-0 flex-col border-r border-border bg-bg-raised">
       <div className="px-3 pb-2 pt-2">
@@ -40,6 +42,9 @@ export function Sidebar() {
           className="ml-auto h-7 w-7"
         >
           <MessageSquarePlus className="h-4 w-4" />
+        </IconButton>
+        <IconButton label="Collapse sidebar" onClick={toggleSidebar} size="sm">
+          <PanelLeftClose className="h-4 w-4" />
         </IconButton>
       </div>
 
