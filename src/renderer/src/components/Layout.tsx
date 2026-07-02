@@ -246,7 +246,12 @@ function ShellSplit({ children }: { children: ReactNode }) {
           onExpand={() => persistSidebarCollapsed(false)}
           className="flex min-h-0 min-w-0 overflow-hidden"
         >
-          <Sidebar onToggleSidebar={toggleSidebar} />
+          {/* Unmount content while collapsed: the zero-width panel clips
+              visually (overflow-hidden) but scrollWidth would still report
+              the content, reading as horizontal overflow. */}
+          {sidebarCollapsed ? null : (
+            <Sidebar onToggleSidebar={toggleSidebar} />
+          )}
         </ResizablePanel>
         <ResizeHandle ariaLabel="Resize sidebar" onReset={reset} />
         <ResizablePanel
