@@ -24,6 +24,7 @@ import { createRequire } from "node:module";
 import type { BrowserViewState } from "@shared/domain";
 import type { BrowserWindow, WebContentsView } from "electron";
 import { scoped } from "../logger";
+import { validateExternalUrl } from "../services/external-url";
 
 const log = scoped("browser");
 
@@ -146,8 +147,17 @@ function defaultCreateView(opts: CreateViewOptions): ManagedView {
   });
 }
 
+// Last-line enforcement of the shared external-open policy on the DEFAULT
+// (electron shell) opener: even if a caller's gate is bypassed or a new call
+// site forgets to check, only the validated, normalized href can reach the OS.
+// Injected test openers replace this whole function, callers gate explicitly.
 function defaultOpenExternal(url: string): void {
-  void electron().shell.openExternal(url);
+  const verdict = validateExternalUrl(url);
+  if (!verdict.ok) {
+    log.warn("blocked external open", { reason: verdict.reason });
+    return;
+  }
+  void electron().shell.openExternal(verdict.url);
 }
 
 function blockedMessage(allowlist?: readonly string[]): string {
@@ -224,7 +234,10 @@ export class BrowserViewManager {
     const record = this.views.get(id);
     const url = record?.view.webContents.getURL();
     if (!record || !url) return;
-    if (!isUrlAllowed(url, this.allowlist)) {
+    // Allowlist gate first (embedded policy), then the shared external-open
+    // policy (http(s)-only, no credentials) — same gate as every other
+    // OS-browser open in main.
+    if (!isUrlAllowed(url, this.allowlist) || !validateExternalUrl(url).ok) {
       record.error =
         "Cannot open externally. The current browser URL is not an allowed http(s) URL.";
       this.emitState(id);
@@ -330,7 +343,9 @@ export class BrowserViewManager {
     // Deny every popup / new window inside the embedded view; open an allowed
     // target in the OS browser instead. The view never spawns child windows.
     wc.setWindowOpenHandler(({ url }) => {
-      if (isUrlAllowed(url, this.allowlist)) this.openExternalUrl(url);
+      if (isUrlAllowed(url, this.allowlist) && validateExternalUrl(url).ok) {
+        this.openExternalUrl(url);
+      }
       return { action: "deny" };
     });
     // Re-emit state on every navigation / title / loading transition.
