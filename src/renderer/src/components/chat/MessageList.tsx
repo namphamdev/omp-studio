@@ -167,7 +167,6 @@ function buildRows(
   if (streaming) rows.push({ kind: "loader", key: "loader", activeTool });
   return rows;
 }
-
 export function MessageList({ sessionId }: { sessionId: string }) {
   const messages = useSession(sessionId, (s) => s?.messages ?? EMPTY_MESSAGES);
   const status = useSession(sessionId, (s) => s?.status ?? "idle");

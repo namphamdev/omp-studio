@@ -14,6 +14,7 @@ import type { BrowserWindow, IpcMain } from "electron";
 import type { ExternalTerminalLaunchers } from "../terminal/external-launchers";
 import type { PtySession } from "../terminal/pty-session";
 import type { TerminalRegistry } from "../terminal/registry";
+import { sendToWindow } from "./send";
 
 export function registerTerminalIpc(
   ipcMain: IpcMain,
@@ -40,13 +41,13 @@ export function registerTerminalIpc(
   // drops the session from its map on "exit"; this only forwards the events.
   const forward = (session: PtySession): void => {
     session.on("data", (data: string) =>
-      getWindow()?.webContents.send(CH.evtTerminalData, {
+      sendToWindow(getWindow, CH.evtTerminalData, {
         id: session.id,
         data,
       }),
     );
     session.on("exit", (code: number | null) =>
-      getWindow()?.webContents.send(CH.evtTerminalExit, {
+      sendToWindow(getWindow, CH.evtTerminalExit, {
         id: session.id,
         code,
       }),
@@ -61,11 +62,13 @@ export function registerTerminalIpc(
       return session.info;
     },
   );
-  // write/resize/kill no-op on an unknown id: the renderer may race a write
-  // against an exit it has not processed yet, so a late call must never throw.
-  handle(CH.terminalWrite, (id: string, data: string) => {
-    registry.get(id)?.write(data);
-  });
+  // resize/kill no-op on an unknown id: the renderer may race a call against
+  // an exit it has not processed yet, so a late call must never throw. write
+  // goes through the registry's gated path: capability re-checked in main on
+  // EVERY write and the payload shape/size-validated before any pty sees it.
+  handle(CH.terminalWrite, (id: string, data: string) =>
+    registry.write(id, data),
+  );
   handle(CH.terminalResize, (id: string, cols: number, rows: number) => {
     registry.get(id)?.resize(cols, rows);
   });

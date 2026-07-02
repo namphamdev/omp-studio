@@ -1,7 +1,8 @@
 import { join } from "node:path";
 import { electronApp, is, optimizer } from "@electron-toolkit/utils";
-import { app, BrowserWindow, ipcMain, shell } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { BrowserViewManager } from "./browser/view-manager";
+import { safeOpenExternal } from "./external-open";
 import { registerBrowserIpc } from "./ipc/browser";
 import { registerChangesIpc } from "./ipc/changes";
 import { registerChatIpc } from "./ipc/chat";
@@ -62,10 +63,33 @@ function createWindow(): void {
     mainWindow = null;
   });
 
-  // Production diagnostics: surface renderer crashes and error-level console
-  // output to the main-process log (also used as a boot smoke-test signal).
+  // Renderer crash recovery: a gone renderer (OOM, GPU fault, crashed V8) is
+  // recoverable — the window is still alive and main-owned state (registry,
+  // settings, views) is intact, so reload instead of stranding the user on a
+  // blank window. Bounded TWICE: a burst filter (>3 crashes in 30s means the
+  // crash is on the boot path — reloading would just loop) AND a lifetime cap
+  // per window (a deterministic crash slightly slower than the burst window
+  // must not reload forever). A clean/deliberate teardown is not a crash and
+  // never triggers a reload. Unrecoverable MAIN-process failures are
+  // untouched by this path; past the caps the user can still reload manually.
+  const MAX_AUTO_RELOADS = 5;
+  let rendererCrashTimes: number[] = [];
+  let autoReloads = 0;
   mainWindow.webContents.on("render-process-gone", (_event, details) => {
     log.error("renderer process gone", { reason: details.reason });
+    if (details.reason === "clean-exit" || details.reason === "killed") return;
+    const now = Date.now();
+    rendererCrashTimes = rendererCrashTimes.filter((t) => now - t < 30_000);
+    rendererCrashTimes.push(now);
+    if (rendererCrashTimes.length > 3 || autoReloads >= MAX_AUTO_RELOADS) {
+      log.error("renderer crash loop; not reloading again");
+      return;
+    }
+    const contents = mainWindow?.webContents;
+    if (!contents || contents.isDestroyed()) return;
+    autoReloads += 1;
+    log.info("reloading renderer after crash", { attempt: autoReloads });
+    contents.reload();
   });
   mainWindow.webContents.on("console-message", (_event, level, message) => {
     if (level >= 2) log.error(`renderer: ${message}`);
@@ -75,8 +99,11 @@ function createWindow(): void {
     if (smoke) log.info("smoke ok");
   });
 
+  // Popups from the privileged renderer are always denied; an http(s),
+  // credential-free target opens in the OS browser instead (safeOpenExternal
+  // drops everything else).
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    void shell.openExternal(url);
+    void safeOpenExternal(url);
     return { action: "deny" };
   });
 
@@ -88,7 +115,7 @@ function createWindow(): void {
     const rendererUrl = process.env["ELECTRON_RENDERER_URL"];
     if (is.dev && rendererUrl && url.startsWith(rendererUrl)) return;
     event.preventDefault();
-    void shell.openExternal(url);
+    void safeOpenExternal(url);
   });
 
   const devUrl = process.env["ELECTRON_RENDERER_URL"];
