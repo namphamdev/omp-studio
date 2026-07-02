@@ -77,6 +77,14 @@ const defaultStore: SessionStore = {
 
 export class SessionRegistry {
   private readonly records = new Map<string, SessionRecord>();
+  // Children inside the create/resume spawn-to-ready window. They are not in
+  // `records` yet, so disposeAll() sweeps this set too — quit during startup
+  // must not orphan a freshly spawned child.
+  private readonly inFlight = new Set<OmpRpcSession>();
+  // In-flight resumes keyed by studio session id. hibernate()/dispose() flag
+  // the token so a resume that completes AFTER a deliberate teardown does not
+  // resurrect the closed chat (the teardown wins).
+  private readonly resuming = new Map<string, { cancelled: boolean }>();
   private readonly createSession: SessionFactory;
   private readonly store: SessionStore;
 
@@ -151,6 +159,7 @@ export class SessionRegistry {
   async resume(
     descriptor: OpenSessionDescriptor,
   ): Promise<{ id: string; session: OmpRpcSession; state: RpcState }> {
+    const id = descriptor.studioSessionId;
     const resume = resolveResumeToken(descriptor);
     const session = this.createSession({
       cwd: descriptor.cwd,
@@ -160,10 +169,24 @@ export class SessionRegistry {
       autoApprove: descriptor.approvalPolicy.autoApprove,
       resume,
     });
-    const state = await this.startSession(session);
+    // A hibernate/dispose landing while this resume awaits ready must WIN —
+    // completing the resume anyway would resurrect a chat the user just
+    // closed. The token is flagged by hibernate()/dispose() and checked
+    // after the await.
+    const token = { cancelled: false };
+    this.resuming.set(id, token);
+    let state: RpcState;
+    try {
+      state = await this.startSession(session);
+    } finally {
+      this.resuming.delete(id);
+    }
+    if (token.cancelled) {
+      session.dispose();
+      throw new Error("session was closed while resuming");
+    }
     // Keep the studioSessionId stable across resume; the runtime sessionFile and
     // omp session id may have changed and are refreshed from live state.
-    const id = descriptor.studioSessionId;
     const refreshed: OpenSessionDescriptor = {
       ...descriptor,
       lastActiveAt: new Date().toISOString(),
@@ -211,6 +234,8 @@ export class SessionRegistry {
   // Hibernate: dispose the child but KEEP the descriptor so the chat can be
   // resumed. The session stays in the list as "hibernated".
   async hibernate(id: string): Promise<void> {
+    const resuming = this.resuming.get(id);
+    if (resuming) resuming.cancelled = true;
     const record = this.records.get(id);
     if (!record) return;
     record.child?.dispose();
@@ -224,6 +249,8 @@ export class SessionRegistry {
   // Unlike hibernate, the chat no longer appears in the workspace (the JSONL
   // transcript on disk is untouched — deletion is a separate session action).
   async dispose(id: string): Promise<void> {
+    const resuming = this.resuming.get(id);
+    if (resuming) resuming.cancelled = true;
     const record = this.records.get(id);
     if (!record) return;
     this.records.delete(id);
@@ -236,6 +263,11 @@ export class SessionRegistry {
   // so a reopened window must still be able to list/resume these chats.
   // Synchronous to match the electron lifecycle hooks that call it.
   disposeAll(): void {
+    // Children still in the spawn-to-ready window: not yet registered, but
+    // alive. dispose() rejects their whenReady(), so the awaiting create/
+    // resume unwinds with "session disposed" instead of resolving.
+    for (const session of this.inFlight) session.dispose();
+    this.inFlight.clear();
     for (const record of this.records.values()) {
       record.child?.dispose();
       record.child = null;
@@ -246,6 +278,7 @@ export class SessionRegistry {
   // ---- internals --------------------------------------------------------
 
   private async startSession(session: OmpRpcSession): Promise<RpcState> {
+    this.inFlight.add(session);
     try {
       await session.whenReady();
       return await session.getState();
@@ -253,6 +286,8 @@ export class SessionRegistry {
       // A session that never became ready must not leak its child process.
       session.dispose();
       throw error;
+    } finally {
+      this.inFlight.delete(session);
     }
   }
 
@@ -266,6 +301,23 @@ export class SessionRegistry {
     // reflects recency for restore ordering. dispose() removes this listener.
     session.on("frame", (frame: RpcFrame) => {
       if (frame.type === "agent_end") void this.onTurnEnd(id);
+    });
+    // Self-exit / crash handling. This fires ONLY for a child that dies on
+    // its own: OmpRpcSession.dispose() calls removeAllListeners() BEFORE
+    // killing the child (load-bearing ordering — see dispose()), so every
+    // deliberate teardown (hibernate / dispose / resume-replace) never
+    // reaches this listener. Without it a crashed child would stay listed
+    // as status:"open" with a dead child ref, and chat commands would throw
+    // "unknown session" at a chat the UI still shows as live.
+    session.on("exit", () => {
+      const record = this.records.get(id);
+      // Already replaced (resume) or dropped (dispose) — nothing to reconcile.
+      if (!record || record.child !== session) return;
+      log.warn("session child exited on its own; hibernating record", { id });
+      record.child = null;
+      record.descriptor.status = "hibernated";
+      record.descriptor.lastActiveAt = new Date().toISOString();
+      void this.persist();
     });
   }
 
